@@ -22,8 +22,19 @@
     <div class="section-title">누가 공부할까요?</div>
     <div class="section-sub">프로필을 선택하거나 새로 만들어 주세요</div>
     <div class="profile-list" id="profileList"></div>
+    <input type="file" id="profilePhotoChangeInput" accept="image/*" class="hidden" onchange="handleExistingPhotoSelect(this)">
 
     <div class="new-profile-box">
+      <label>프로필 사진 (선택)</label>
+      <div class="photo-upload-row">
+        <div class="photo-preview" id="newPhotoPreview">👤</div>
+        <div class="photo-upload-actions">
+          <label class="photo-upload-btn" for="newProfilePhoto">사진 선택</label>
+          <button type="button" class="photo-remove-btn hidden" id="newPhotoRemoveBtn" onclick="removeNewPhoto()">사진 삭제</button>
+        </div>
+        <input type="file" id="newProfilePhoto" accept="image/*" class="hidden" onchange="handleNewPhotoSelect(this)">
+      </div>
+
       <label>학교</label>
       <input type="text" id="newProfileSchool" placeholder="OO초등학교" maxlength="20">
 
@@ -60,8 +71,13 @@
 
   <!-- 2. 홈 화면 -->
   <div class="screen" id="screen-home">
-    <div class="section-title" id="homeGreeting">안녕하세요!</div>
-    <div class="section-sub">오늘은 무엇을 공부할까요?</div>
+    <div class="home-header">
+      <div class="home-avatar" id="homeAvatar">👤</div>
+      <div>
+        <div class="section-title" id="homeGreeting" style="margin:0;">안녕하세요!</div>
+        <div class="section-sub" style="margin:0;">오늘은 무엇을 공부할까요?</div>
+      </div>
+    </div>
 
     <div class="subject-grid">
       <div class="subject-card math" onclick="goToDifficulty('math')">
