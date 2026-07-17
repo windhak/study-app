@@ -16,6 +16,8 @@
   --english-dark: #5142c4;
   --game: #ffb347;
   --game-dark: #e0932a;
+  --mascot: #c792ea;
+  --mascot-dark: #9b6bc4;
   --success: #34c98e;
   --danger: #ff5f6d;
   --line: #d9e4f5;
@@ -220,6 +222,34 @@ img.profile-avatar { object-fit: cover; }
 .subject-card.korean { background: linear-gradient(135deg, var(--korean), var(--korean-dark)); }
 .subject-card.english { background: linear-gradient(135deg, var(--english), var(--english-dark)); }
 .subject-card.game { background: linear-gradient(135deg, var(--game), var(--game-dark)); }
+.subject-card.mascot { background: linear-gradient(135deg, var(--mascot), var(--mascot-dark)); }
+
+/* ---------- 요정이 챗봇 화면 ---------- */
+.chat-window {
+  height: 360px; overflow-y: auto; background: var(--card-bg);
+  border: 2px solid var(--line); border-radius: 18px; padding: 14px;
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;
+}
+.chat-bubble { max-width: 78%; padding: 10px 14px; border-radius: 16px; font-size: 14.5px; line-height: 1.4; }
+.chat-bubble.mascot {
+  align-self: flex-start; background: var(--bg); color: var(--ink);
+  border-bottom-left-radius: 4px;
+}
+.chat-bubble.user {
+  align-self: flex-end; background: var(--ink); color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.chat-quick-replies { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.chat-quick-reply {
+  background: var(--card-bg); border: 2px solid var(--line); border-radius: 20px;
+  padding: 7px 12px; font-size: 13px; font-weight: 700; color: var(--ink-soft); cursor: pointer;
+}
+.chat-quick-reply:active { transform: scale(0.96); }
+.chat-input-row { display: flex; gap: 8px; }
+.chat-input-row input {
+  flex: 1; padding: 12px 14px; border-radius: 14px; border: 2px solid var(--line); font-size: 15px;
+}
+.chat-input-row .btn { width: auto; padding: 12px 18px; }
 
 .sticker-strip {
   display: flex; gap: 6px; margin-top: 18px; flex-wrap: wrap;
