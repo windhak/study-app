@@ -1,0 +1,536 @@
+/* ============================================================
+   app.js — 메인 애플리케이션 로직 (v1.0)
+   저장소: localStorage (기기별 저장, 서버 불필요)
+   ============================================================ */
+
+/* ---------- 전역 상태 ---------- */
+var STORAGE_PROFILES = "studyapp_profiles";
+var STORAGE_LAST_PROFILE = "studyapp_lastProfileId";
+var currentProfile = null;
+
+var quiz = {
+  subject: null,      // 'math' | 'korean' | 'english' | 'gugudan'
+  level: null,        // 1~5
+  mode: null,         // 'time' | 'count'
+  targetValue: null,  // 분 또는 문제수
+  correct: 0,
+  total: 0,
+  startTime: null,
+  endAt: null,         // time 모드일 때 종료 시각(ms)
+  timerHandle: null,
+  currentProblem: null,
+  usedWords: [],
+  awaitingNext: false
+};
+
+var SUBJECT_LABEL = {
+  math: "수학",
+  korean: "국어 낱말게임",
+  english: "영어 단어",
+  gugudan: "구구단 게임"
+};
+var CHOSUNG = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+
+/* ---------- 화면 전환 ---------- */
+function showScreen(id) {
+  var screens = document.querySelectorAll(".screen");
+  for (var i = 0; i < screens.length; i++) screens[i].classList.remove("active");
+  document.getElementById(id).classList.add("active");
+  window.scrollTo(0, 0);
+}
+
+/* ---------- 저장소 헬퍼 ---------- */
+function loadProfiles() {
+  try {
+    var raw = localStorage.getItem(STORAGE_PROFILES);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveProfiles(list) {
+  localStorage.setItem(STORAGE_PROFILES, JSON.stringify(list));
+}
+function getRecords(profileId) {
+  try {
+    var raw = localStorage.getItem("studyapp_records_" + profileId);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveRecordEntry(profileId, entry) {
+  var list = getRecords(profileId);
+  list.unshift(entry);
+  if (list.length > 100) list = list.slice(0, 100);
+  localStorage.setItem("studyapp_records_" + profileId, JSON.stringify(list));
+}
+function getStickerCount(profileId) {
+  var v = localStorage.getItem("studyapp_stickers_" + profileId);
+  return v ? parseInt(v, 10) : 0;
+}
+function addStickers(profileId, n) {
+  var cur = getStickerCount(profileId);
+  localStorage.setItem("studyapp_stickers_" + profileId, String(cur + n));
+}
+
+/* ---------- 프로필 화면 ---------- */
+function renderProfileList() {
+  var profiles = loadProfiles();
+  var box = document.getElementById("profileList");
+  box.innerHTML = "";
+  if (profiles.length === 0) {
+    var empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "아직 프로필이 없어요. 아래에서 새로 만들어 보세요!";
+    box.appendChild(empty);
+    return;
+  }
+  profiles.forEach(function (p) {
+    var card = document.createElement("div");
+    card.className = "profile-card";
+    card.onclick = function () { selectProfile(p.id); };
+
+    var avatar = document.createElement("div");
+    avatar.className = "profile-avatar";
+    avatar.textContent = p.nickname.charAt(0);
+
+    var meta = document.createElement("div");
+    meta.className = "profile-meta";
+    var nm = document.createElement("div");
+    nm.className = "profile-name";
+    nm.textContent = p.nickname;
+    var gr = document.createElement("div");
+    gr.className = "profile-grade";
+    var metaParts = [];
+    if (p.school) metaParts.push(p.school);
+    metaParts.push(p.grade + "학년");
+    if (p.classNum) metaParts.push(p.classNum + "반");
+    if (p.number) metaParts.push(p.number + "번");
+    gr.textContent = metaParts.join(" ") + (p.realName ? " · " + p.realName : "");
+    meta.appendChild(nm); meta.appendChild(gr);
+
+    var del = document.createElement("button");
+    del.className = "profile-delete";
+    del.textContent = "삭제";
+    del.onclick = function (e) { e.stopPropagation(); deleteProfile(p.id); };
+
+    card.appendChild(avatar);
+    card.appendChild(meta);
+    card.appendChild(del);
+    box.appendChild(card);
+  });
+}
+function createProfile() {
+  var school = document.getElementById("newProfileSchool").value.trim();
+  var grade = parseInt(document.getElementById("newProfileGrade").value, 10);
+  var classNum = document.getElementById("newProfileClass").value.trim();
+  var number = document.getElementById("newProfileNumber").value.trim();
+  var realName = document.getElementById("newProfileRealName").value.trim();
+  var nickname = document.getElementById("newProfileNickname").value.trim();
+
+  if (!school) { alert("학교를 입력해 주세요."); return; }
+  if (!realName) { alert("이름을 입력해 주세요."); return; }
+  if (!nickname) { alert("프로필명을 입력해 주세요."); return; }
+
+  var profiles = loadProfiles();
+  var id = "p_" + Date.now();
+  profiles.push({
+    id: id,
+    school: school,
+    grade: grade,
+    classNum: classNum ? parseInt(classNum, 10) : null,
+    number: number ? parseInt(number, 10) : null,
+    realName: realName,
+    nickname: nickname,
+    createdAt: Date.now()
+  });
+  saveProfiles(profiles);
+
+  document.getElementById("newProfileSchool").value = "";
+  document.getElementById("newProfileClass").value = "";
+  document.getElementById("newProfileNumber").value = "";
+  document.getElementById("newProfileRealName").value = "";
+  document.getElementById("newProfileNickname").value = "";
+  document.getElementById("newProfileGrade").value = "3";
+
+  selectProfile(id);
+}
+function deleteProfile(id) {
+  if (!confirm("이 프로필과 학습 기록을 삭제할까요?")) return;
+  var profiles = loadProfiles().filter(function (p) { return p.id !== id; });
+  saveProfiles(profiles);
+  localStorage.removeItem("studyapp_records_" + id);
+  localStorage.removeItem("studyapp_stickers_" + id);
+  if (localStorage.getItem(STORAGE_LAST_PROFILE) === id) {
+    localStorage.removeItem(STORAGE_LAST_PROFILE);
+  }
+  renderProfileList();
+}
+function selectProfile(id) {
+  var profiles = loadProfiles();
+  var p = profiles.filter(function (x) { return x.id === id; })[0];
+  if (!p) return;
+  currentProfile = p;
+  localStorage.setItem(STORAGE_LAST_PROFILE, id);
+  document.getElementById("topbarActions").style.display = "flex";
+  goToHome();
+}
+function goToProfileSelect() {
+  currentProfile = null;
+  document.getElementById("topbarActions").style.display = "none";
+  renderProfileList();
+  showScreen("screen-profile");
+}
+
+/* ---------- 홈 화면 ---------- */
+function goToHome() {
+  document.getElementById("homeGreeting").textContent =
+    currentProfile.nickname + "님, 안녕하세요! (" + currentProfile.school + " " + currentProfile.grade + "학년)";
+  renderStickers();
+  showScreen("screen-home");
+}
+function renderStickers() {
+  var strip = document.getElementById("stickerStrip");
+  strip.innerHTML = "";
+  var count = getStickerCount(currentProfile.id);
+  var total = 20;
+  for (var i = 0; i < total; i++) {
+    var s = document.createElement("div");
+    s.className = "sticker" + (i < count ? " earned" : "");
+    s.textContent = i < count ? "⭐" : "";
+    strip.appendChild(s);
+  }
+}
+
+/* ---------- 난이도 선택 화면 ---------- */
+function goToDifficulty(subject) {
+  quiz.subject = subject;
+  document.getElementById("diffTitle").textContent = SUBJECT_LABEL[subject] + " - 난이도 선택";
+  var grid = document.getElementById("levelGrid");
+  grid.innerHTML = "";
+  for (var lv = 1; lv <= 5; lv++) {
+    (function (level) {
+      var btn = document.createElement("div");
+      btn.className = "level-btn";
+      var label = document.createElement("div");
+      label.className = "lv-label";
+      label.textContent = level + "단계";
+      var stars = document.createElement("div");
+      stars.className = "lv-stars";
+      var starStr = "";
+      for (var s = 0; s < level; s++) starStr += "★";
+      for (var s2 = level; s2 < 5; s2++) starStr += "☆";
+      stars.textContent = starStr;
+      btn.appendChild(label);
+      btn.appendChild(stars);
+      btn.onclick = function () { goToSetup(level); };
+      grid.appendChild(btn);
+    })(lv);
+  }
+  showScreen("screen-difficulty");
+}
+function goToDifficultyBack() {
+  goToDifficulty(quiz.subject);
+}
+
+/* ---------- 설정 화면 (시간/문제수) ---------- */
+function goToSetup(level) {
+  quiz.level = level;
+  quiz.mode = "time";
+  document.getElementById("setupModeTime").classList.add("selected");
+  document.getElementById("setupModeCount").classList.remove("selected");
+  document.getElementById("setupTimeBox").classList.remove("hidden");
+  document.getElementById("setupCountBox").classList.add("hidden");
+  document.getElementById("setupTimeValue").textContent = "5";
+  document.getElementById("setupCountValue").textContent = "10";
+  showScreen("screen-setup");
+}
+function selectSetupMode(mode) {
+  quiz.mode = mode;
+  document.getElementById("setupModeTime").classList.toggle("selected", mode === "time");
+  document.getElementById("setupModeCount").classList.toggle("selected", mode === "count");
+  document.getElementById("setupTimeBox").classList.toggle("hidden", mode !== "time");
+  document.getElementById("setupCountBox").classList.toggle("hidden", mode !== "count");
+}
+function changeSetupValue(delta) {
+  if (quiz.mode === "time") {
+    var el = document.getElementById("setupTimeValue");
+    var v = parseInt(el.textContent, 10) + delta;
+    if (v < 1) v = 1; if (v > 30) v = 30;
+    el.textContent = v;
+  } else {
+    var el2 = document.getElementById("setupCountValue");
+    var v2 = parseInt(el2.textContent, 10) + delta * 5;
+    if (v2 < 5) v2 = 5; if (v2 > 50) v2 = 50;
+    el2.textContent = v2;
+  }
+}
+
+/* ---------- 퀴즈 시작/문제 생성 ---------- */
+function startQuiz() {
+  quiz.targetValue = quiz.mode === "time"
+    ? parseInt(document.getElementById("setupTimeValue").textContent, 10)
+    : parseInt(document.getElementById("setupCountValue").textContent, 10);
+  quiz.correct = 0;
+  quiz.total = 0;
+  quiz.startTime = Date.now();
+  quiz.usedWords = [];
+  quiz.awaitingNext = false;
+
+  if (quiz.mode === "time") {
+    quiz.endAt = Date.now() + quiz.targetValue * 60 * 1000;
+    quiz.timerHandle = setInterval(updateQuizTimer, 500);
+  } else {
+    document.getElementById("quizTimer").textContent = "";
+  }
+
+  showScreen("screen-quiz");
+  nextProblem();
+}
+function updateQuizTimer() {
+  var remain = quiz.endAt - Date.now();
+  if (remain <= 0) {
+    clearInterval(quiz.timerHandle);
+    finishQuiz();
+    return;
+  }
+  var mm = Math.floor(remain / 60000);
+  var ss = Math.floor((remain % 60000) / 1000);
+  document.getElementById("quizTimer").textContent =
+    "남은 시간 " + mm + ":" + (ss < 10 ? "0" + ss : ss);
+  updateProgressBarTime();
+}
+function updateProgressBarTime() {
+  var total = quiz.targetValue * 60 * 1000;
+  var elapsed = total - (quiz.endAt - Date.now());
+  var pct = Math.min(100, Math.max(0, (elapsed / total) * 100));
+  document.getElementById("quizProgressBar").style.width = pct + "%";
+}
+function updateProgressBarCount() {
+  var pct = Math.min(100, (quiz.total / quiz.targetValue) * 100);
+  document.getElementById("quizProgressBar").style.width = pct + "%";
+}
+
+function getChosungHint(word) {
+  var out = "";
+  for (var i = 0; i < word.length; i++) {
+    var code = word.charCodeAt(i);
+    if (code >= 44032 && code <= 55203) {
+      var idx = Math.floor((code - 44032) / 588);
+      out += CHOSUNG[idx] + " ";
+    } else {
+      out += word.charAt(i) + " ";
+    }
+  }
+  return out.trim();
+}
+
+function nextProblem() {
+  if (quiz.mode === "count" && quiz.total >= quiz.targetValue) {
+    finishQuiz();
+    return;
+  }
+  quiz.awaitingNext = false;
+  document.getElementById("quizFeedback").textContent = "";
+  document.getElementById("quizFeedback").className = "quiz-feedback";
+  if (quiz.mode === "count") updateProgressBarCount();
+
+  var inputArea = document.getElementById("quizInputArea");
+  var hintEl = document.getElementById("quizHint");
+  var qEl = document.getElementById("quizQuestion");
+  hintEl.textContent = "";
+
+  if (quiz.subject === "math") {
+    var p = generateMathProblem(quiz.level);
+    quiz.currentProblem = p;
+    qEl.textContent = p.question + " =";
+    renderTextInput(inputArea, "숫자를 입력하세요");
+  } else if (quiz.subject === "gugudan") {
+    var g = generateGugudanProblem(quiz.level);
+    quiz.currentProblem = g;
+    qEl.textContent = g.question;
+    renderTextInput(inputArea, "답을 입력하세요");
+  } else if (quiz.subject === "korean") {
+    var bank = KOREAN_WORDS[quiz.level];
+    var pick = pickUnusedWord(bank, "word");
+    quiz.currentProblem = { answer: pick.word };
+    qEl.textContent = getChosungHint(pick.word);
+    hintEl.textContent = "힌트: " + pick.hint;
+    renderTextInput(inputArea, "낱말을 입력하세요");
+  } else if (quiz.subject === "english") {
+    var ebank = ENGLISH_WORDS[quiz.level];
+    var epick = pickUnusedWord(ebank, "word");
+    quiz.currentProblem = { answer: epick.meaning };
+    qEl.textContent = epick.word;
+    hintEl.textContent = "이 영어 단어의 뜻은 무엇일까요?";
+    var choices = buildChoices(epick.meaning, ENGLISH_WORDS);
+    renderChoiceInput(inputArea, choices);
+  }
+}
+function pickUnusedWord(bank, key) {
+  var remaining = bank.filter(function (w) { return quiz.usedWords.indexOf(w[key]) === -1; });
+  if (remaining.length === 0) { quiz.usedWords = []; remaining = bank; }
+  var pick = remaining[randInt(0, remaining.length - 1)];
+  quiz.usedWords.push(pick[key]);
+  return pick;
+}
+
+function renderTextInput(container, placeholder) {
+  container.innerHTML =
+    '<input type="text" class="quiz-input" id="quizAnswerInput" placeholder="' + placeholder + '" autocomplete="off">' +
+    '<button class="btn btn-primary" id="quizSubmitBtn">확인</button>';
+  var input = document.getElementById("quizAnswerInput");
+  document.getElementById("quizSubmitBtn").onclick = submitTextAnswer;
+  input.onkeydown = function (e) { if (e.key === "Enter") submitTextAnswer(); };
+  setTimeout(function () { input.focus(); }, 50);
+}
+function renderChoiceInput(container, choices) {
+  container.innerHTML = '<div class="quiz-choice-grid" id="quizChoiceGrid"></div>';
+  var grid = document.getElementById("quizChoiceGrid");
+  choices.forEach(function (c) {
+    var b = document.createElement("div");
+    b.className = "quiz-choice";
+    b.textContent = c;
+    b.onclick = function () { submitChoiceAnswer(c, b); };
+    grid.appendChild(b);
+  });
+}
+function submitTextAnswer() {
+  if (quiz.awaitingNext) return;
+  var input = document.getElementById("quizAnswerInput");
+  var raw = input.value.trim();
+  if (raw === "") return;
+  var correctAns = quiz.currentProblem.answer;
+  var isCorrect;
+  if (typeof correctAns === "number") {
+    isCorrect = parseInt(raw, 10) === correctAns;
+  } else {
+    isCorrect = raw === correctAns;
+  }
+  handleAnswerResult(isCorrect, correctAns);
+}
+function submitChoiceAnswer(chosen, btnEl) {
+  if (quiz.awaitingNext) return;
+  var correctAns = quiz.currentProblem.answer;
+  var isCorrect = chosen === correctAns;
+  var buttons = document.querySelectorAll(".quiz-choice");
+  buttons.forEach(function (b) {
+    b.onclick = null;
+    if (b.textContent === correctAns) b.classList.add("correct");
+    else if (b === btnEl && !isCorrect) b.classList.add("wrong");
+  });
+  handleAnswerResult(isCorrect, correctAns);
+}
+function handleAnswerResult(isCorrect, correctAns) {
+  quiz.awaitingNext = true;
+  quiz.total += 1;
+  if (isCorrect) quiz.correct += 1;
+  var fb = document.getElementById("quizFeedback");
+  if (isCorrect) {
+    fb.textContent = "정답이에요! 🎉";
+    fb.className = "quiz-feedback ok";
+  } else {
+    fb.textContent = "아쉬워요! 정답은 " + correctAns + " 예요";
+    fb.className = "quiz-feedback no";
+  }
+  if (quiz.mode === "count") updateProgressBarCount();
+  setTimeout(function () {
+    if (quiz.mode === "time" && Date.now() >= quiz.endAt) { finishQuiz(); return; }
+    nextProblem();
+  }, 1000);
+}
+
+/* ---------- 결과 처리 ---------- */
+function finishQuiz() {
+  if (quiz.timerHandle) clearInterval(quiz.timerHandle);
+  var elapsedSec = Math.round((Date.now() - quiz.startTime) / 1000);
+  var accuracy = quiz.total > 0 ? Math.round((quiz.correct / quiz.total) * 100) : 0;
+
+  var earned = 0;
+  if (quiz.total > 0 && accuracy >= 70) earned += 1;
+  if (accuracy === 100) earned += 1;
+  if (earned > 0) addStickers(currentProfile.id, earned);
+
+  saveRecordEntry(currentProfile.id, {
+    date: new Date().toISOString(),
+    subject: quiz.subject,
+    level: quiz.level,
+    mode: quiz.mode,
+    targetValue: quiz.targetValue,
+    correct: quiz.correct,
+    total: quiz.total,
+    elapsedSec: elapsedSec
+  });
+
+  document.getElementById("resultScore").textContent = quiz.correct + " / " + quiz.total;
+  document.getElementById("resultDetail").textContent =
+    SUBJECT_LABEL[quiz.subject] + " · " + quiz.level + "단계 · 정답률 " + accuracy + "% · " +
+    Math.floor(elapsedSec / 60) + "분 " + (elapsedSec % 60) + "초";
+  document.getElementById("resultEmoji").textContent = accuracy >= 90 ? "🏆" : accuracy >= 70 ? "🎉" : "💪";
+
+  var stickerBox = document.getElementById("resultStickers");
+  stickerBox.innerHTML = "";
+  for (var i = 0; i < earned; i++) {
+    var s = document.createElement("div");
+    s.className = "sticker earned";
+    s.textContent = "⭐";
+    stickerBox.appendChild(s);
+  }
+  showScreen("screen-result");
+}
+function retrySameSetup() {
+  showScreen("screen-quiz");
+  quiz.correct = 0; quiz.total = 0; quiz.startTime = Date.now(); quiz.usedWords = [];
+  document.getElementById("quizProgressBar").style.width = "0%";
+  if (quiz.mode === "time") {
+    quiz.endAt = Date.now() + quiz.targetValue * 60 * 1000;
+    quiz.timerHandle = setInterval(updateQuizTimer, 500);
+  }
+  nextProblem();
+}
+
+/* ---------- 기록 화면 ---------- */
+function goToRecords() {
+  var records = getRecords(currentProfile.id);
+  var totalSessions = records.length;
+  var totalCorrect = 0, totalProblems = 0;
+  records.forEach(function (r) { totalCorrect += r.correct; totalProblems += r.total; });
+  var avgAcc = totalProblems > 0 ? Math.round((totalCorrect / totalProblems) * 100) : 0;
+
+  var summary = document.getElementById("recordSummary");
+  summary.innerHTML =
+    '<div class="record-box"><div class="num">' + totalSessions + '</div><div class="lbl">학습 횟수</div></div>' +
+    '<div class="record-box"><div class="num">' + totalProblems + '</div><div class="lbl">푸 문제 수</div></div>' +
+    '<div class="record-box"><div class="num">' + avgAcc + '%</div><div class="lbl">평균 정답률</div></div>' +
+    '<div class="record-box"><div class="num">' + getStickerCount(currentProfile.id) + '</div><div class="lbl">획득 스티커</div></div>';
+
+  var log = document.getElementById("recordLog");
+  log.innerHTML = "";
+  if (records.length === 0) {
+    log.innerHTML = '<div class="empty-state">아직 학습 기록이 없어요. 문제를 풀어보세요!</div>';
+  } else {
+    records.slice(0, 30).forEach(function (r) {
+      var item = document.createElement("div");
+      item.className = "record-log-item";
+      var d = new Date(r.date);
+      var dateStr = (d.getMonth() + 1) + "/" + d.getDate() + " " +
+        (d.getHours() < 10 ? "0" + d.getHours() : d.getHours()) + ":" +
+        (d.getMinutes() < 10 ? "0" + d.getMinutes() : d.getMinutes());
+      item.innerHTML =
+        '<div><div class="rl-subject">' + SUBJECT_LABEL[r.subject] + ' · ' + r.level + '단계</div>' +
+        '<div class="rl-date">' + dateStr + '</div></div>' +
+        '<div>' + r.correct + ' / ' + r.total + '</div>';
+      log.appendChild(item);
+    });
+  }
+  showScreen("screen-records");
+}
+
+/* ---------- 초기 진입 ---------- */
+window.onload = function () {
+  var lastId = localStorage.getItem(STORAGE_LAST_PROFILE);
+  var profiles = loadProfiles();
+  var last = profiles.filter(function (p) { return p.id === lastId; })[0];
+  if (last) {
+    selectProfile(last.id);
+  } else {
+    goToProfileSelect();
+  }
+};
