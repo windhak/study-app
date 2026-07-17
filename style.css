@@ -18,6 +18,8 @@
   --game-dark: #e0932a;
   --mascot: #c792ea;
   --mascot-dark: #9b6bc4;
+  --sentence: #4fb0c6;
+  --sentence-dark: #348a9e;
   --success: #34c98e;
   --danger: #ff5f6d;
   --line: #d9e4f5;
@@ -223,6 +225,7 @@ img.profile-avatar { object-fit: cover; }
 .subject-card.english { background: linear-gradient(135deg, var(--english), var(--english-dark)); }
 .subject-card.game { background: linear-gradient(135deg, var(--game), var(--game-dark)); }
 .subject-card.mascot { background: linear-gradient(135deg, var(--mascot), var(--mascot-dark)); }
+.subject-card.sentence { background: linear-gradient(135deg, var(--sentence), var(--sentence-dark)); }
 
 /* ---------- 요정이 챗봇 화면 ---------- */
 .chat-window {
@@ -296,6 +299,7 @@ img.profile-avatar { object-fit: cover; }
   text-align: center; margin-bottom: 20px; border: 2px solid var(--line);
 }
 .quiz-question { font-size: 26px; font-weight: 800; }
+.quiz-question.small { font-size: 17px; font-weight: 700; text-align: left; line-height: 1.5; }
 .speak-btn {
   display: inline-block; margin-top: 10px; border: none; border-radius: 12px;
   background: var(--english); color: #fff; font-size: 14px; font-weight: 700;
