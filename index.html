@@ -105,6 +105,11 @@
         <div class="subj-name">구구단 게임</div>
         <div class="subj-desc">빠르게 구구단을 풀어봐요</div>
       </div>
+      <div class="subject-card wordchain" onclick="goToWordChainCategory()">
+        <div class="subj-emoji">🔗</div>
+        <div class="subj-name">끝말잇기</div>
+        <div class="subj-desc">주제를 골라 요정이와 낱말을 이어요</div>
+      </div>
       <div class="subject-card mascot" onclick="goToMascotChat()">
         <div class="subj-emoji">🧚</div>
         <div class="subj-name">요정이와 대화하기</div>
@@ -127,6 +132,47 @@
       <button class="btn btn-primary" id="chatSendBtn" onclick="sendMascotMessage()">보내기</button>
     </div>
     <button class="btn btn-outline mt-16" onclick="goToHome()">◀ 홈으로</button>
+  </div>
+
+  <!-- 2-2. 끝말잇기 주제 선택 화면 -->
+  <div class="screen" id="screen-wc-category">
+    <div class="section-title">🔗 끝말잇기</div>
+    <div class="section-sub">주제를 고르면 바로 시작해요. 주제에 맞는 낱말은 보너스 점수!</div>
+    <div class="wc-cat-grid" id="wcCategoryGrid"></div>
+    <button class="btn btn-outline mt-16" onclick="goToHome()">◀ 홈으로</button>
+  </div>
+
+  <!-- 2-3. 끝말잇기 게임 화면 -->
+  <div class="screen" id="screen-wc">
+    <div class="section-title" id="wcTitle">🔗 끝말잇기</div>
+    <div class="wc-statusbar">
+      <div class="wc-next" id="wcNextChar"></div>
+      <div class="wc-score" id="wcScoreInfo"></div>
+    </div>
+    <div class="quiz-timer" id="wcTimer"></div>
+    <div class="chat-window" id="wcChainWindow"></div>
+    <div class="chat-input-row">
+      <input type="text" id="wcInput" placeholder="낱말을 입력하세요" maxlength="12" autocomplete="off" onkeydown="if(event.key==='Enter') submitWordChainWord()">
+      <button class="btn btn-primary" onclick="submitWordChainWord()">보내기</button>
+    </div>
+    <button class="btn btn-outline mt-16" onclick="giveUpWordChain()">🙈 모르겜어요 (그만하기)</button>
+  </div>
+
+  <!-- 2-4. 끝말잇기 결과 화면 -->
+  <div class="screen" id="screen-wc-result">
+    <div class="result-hero">
+      <div class="result-emoji" id="wcResultEmoji">🎉</div>
+      <div class="result-score" id="wcResultScore">0낱말</div>
+      <div class="result-detail" id="wcResultDetail"></div>
+      <div class="wc-best" id="wcResultBest"></div>
+      <div class="result-stickers" id="wcResultStickers"></div>
+    </div>
+    <div class="wc-chain-list" id="wcResultChain"></div>
+    <div class="btn-block-group">
+      <button class="btn btn-primary" onclick="retryWordChain()">한 번 더 하기</button>
+      <button class="btn btn-outline" onclick="goToWordChainCategory()">다른 주제 고르기</button>
+      <button class="btn btn-outline" onclick="goToHome()">홈으로 가기</button>
+    </div>
   </div>
 
   <!-- 3. 난이도 선택 화면 -->
@@ -208,6 +254,7 @@
 </div>
 
 <script src="data.js"></script>
+<script src="data-wordchain.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

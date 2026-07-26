@@ -1,5 +1,5 @@
 /* ============================================================
-   app.js — 메인 애플리케이션 로직 (v1.0)
+   app.js — 메인 애플리케이션 로직 (v1.6)
    저장소: localStorage (기기별 저장, 서버 불필요)
    ============================================================ */
 
@@ -31,7 +31,8 @@ var SUBJECT_LABEL = {
   korean: "국어 낱말게임",
   sentence: "국어 문장",
   english: "영어 단어",
-  gugudan: "구구단 게임"
+  gugudan: "구구단 게임",
+  wordchain: "끝말잇기"
 };
 var CHOSUNG = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 
@@ -695,7 +696,11 @@ function goToRecords() {
   var records = getRecords(currentProfile.id);
   var totalSessions = records.length;
   var totalCorrect = 0, totalProblems = 0;
-  records.forEach(function (r) { totalCorrect += r.correct; totalProblems += r.total; });
+  records.forEach(function (r) {
+    if (r.subject === "wordchain") return;   /* 끝말잇기는 정답률 개념이 없어 통계에서 제외 */
+    totalCorrect += r.correct;
+    totalProblems += r.total;
+  });
   var avgAcc = totalProblems > 0 ? Math.round((totalCorrect / totalProblems) * 100) : 0;
 
   var summary = document.getElementById("recordSummary");
@@ -717,14 +722,466 @@ function goToRecords() {
       var dateStr = (d.getMonth() + 1) + "/" + d.getDate() + " " +
         (d.getHours() < 10 ? "0" + d.getHours() : d.getHours()) + ":" +
         (d.getMinutes() < 10 ? "0" + d.getMinutes() : d.getMinutes());
+      var titleStr, valueStr;
+      if (r.subject === "wordchain") {
+        titleStr = SUBJECT_LABEL[r.subject] + " · " + r.level;
+        valueStr = r.correct + "낱말";
+      } else {
+        titleStr = SUBJECT_LABEL[r.subject] + " · " + r.level + "단계";
+        valueStr = r.correct + " / " + r.total;
+      }
       item.innerHTML =
-        '<div><div class="rl-subject">' + SUBJECT_LABEL[r.subject] + ' · ' + r.level + '단계</div>' +
+        '<div><div class="rl-subject">' + titleStr + '</div>' +
         '<div class="rl-date">' + dateStr + '</div></div>' +
-        '<div>' + r.correct + ' / ' + r.total + '</div>';
+        '<div>' + valueStr + '</div>';
       log.appendChild(item);
     });
   }
   showScreen("screen-records");
+}
+
+/* ============================================================
+   끝말잇기 (v1.6)
+   - 카테고리는 보너스 점수용 (판정은 전체 사전)
+   - 사전에 없는 낱말은 오답이 아니라 재입력 (무패널티)
+   - 두음법칙 양방향 허용 / 한 게임 안에서 중복 금지
+   - 한 턴 60초 + "모르겠어요" 버튼, 목표 없는 무한 모드
+   ============================================================ */
+
+var WC_TURN_SECONDS = 60;
+var WC_WIN_BONUS = 30;      /* 요정이를 막았을 때 라운드 승리 보너스 */
+var WC_HANGUL_BASE = 44032;
+var WC_CHO_N = 2, WC_CHO_R = 5, WC_CHO_O = 11;      /* ㄴ, ㄹ, ㅇ */
+var WC_PALATAL = [2, 3, 6, 7, 12, 17, 20];          /* ㅑㅒㅕㅖㅛㅠㅣ */
+var WC_STORAGE_BEST = "studyapp_wcbest_";
+
+var wordchain = {
+  catId: 0,
+  catName: "자유",
+  chain: [],          /* [{ w: 낱말, by: "fairy"|"me", bonus: true/false }] */
+  used: {},
+  myCount: 0,
+  bonusCount: 0,
+  wins: 0,            /* 요정이를 막은 횟수 */
+  round: 1,
+  turnEndAt: null,
+  timerHandle: null,
+  startTime: null,
+  locked: false,      /* 요정이가 생각하는 동안 입력 잠금 */
+  finished: false
+};
+
+/* ---------- 한글 분해/조립 · 두음법칙 ---------- */
+function wcDecompose(ch) {
+  var code = ch.charCodeAt(0) - WC_HANGUL_BASE;
+  if (code < 0 || code > 11171) return null;
+  return { cho: Math.floor(code / 588), jung: Math.floor((code % 588) / 28), jong: code % 28 };
+}
+function wcCompose(cho, jung, jong) {
+  return String.fromCharCode(WC_HANGUL_BASE + cho * 588 + jung * 28 + jong);
+}
+function wcIsPalatal(jung) {
+  for (var i = 0; i < WC_PALATAL.length; i++) if (WC_PALATAL[i] === jung) return true;
+  return false;
+}
+/* 끝 글자로 시작할 수 있는 글자들 (두음법칙 양방향 허용) */
+function wcStartVariants(ch) {
+  var out = [ch];
+  var d = wcDecompose(ch);
+  if (!d) return out;
+  var pal = wcIsPalatal(d.jung);
+  if (d.cho === WC_CHO_R) {
+    out.push(wcCompose(pal ? WC_CHO_O : WC_CHO_N, d.jung, d.jong));
+  } else if (d.cho === WC_CHO_N) {
+    if (pal) out.push(wcCompose(WC_CHO_O, d.jung, d.jong));
+    out.push(wcCompose(WC_CHO_R, d.jung, d.jong));
+  } else if (d.cho === WC_CHO_O && pal) {
+    out.push(wcCompose(WC_CHO_R, d.jung, d.jong));
+    out.push(wcCompose(WC_CHO_N, d.jung, d.jong));
+  }
+  var seen = {}, res = [];
+  for (var i = 0; i < out.length; i++) {
+    if (!seen[out[i]]) { seen[out[i]] = true; res.push(out[i]); }
+  }
+  return res;
+}
+function wcNormalize(s) {
+  return String(s).replace(/\s+/g, "").replace(/[.,!?~]/g, "").trim();
+}
+function wcIsHangulOnly(s) {
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < WC_HANGUL_BASE || c > 55203) return false;
+  }
+  return s.length > 0;
+}
+
+/* ---------- 사전 조회 ---------- */
+function wcInDict(word) {
+  return WORDCHAIN_CAT_OF[word] !== undefined;
+}
+/* 끝 글자 ch 뒤에 올 수 있는, 아직 안 쓴 낱말들 */
+function wcCandidates(ch, extraUsed) {
+  var variants = wcStartVariants(ch), out = [], i, j, list, w;
+  for (i = 0; i < variants.length; i++) {
+    list = WORDCHAIN_BY_FIRST[variants[i]];
+    if (!list) continue;
+    for (j = 0; j < list.length; j++) {
+      w = list[j];
+      if (wordchain.used[w]) continue;
+      if (extraUsed && extraUsed[w]) continue;
+      out.push(w);
+    }
+  }
+  return out;
+}
+/* 그 낱말을 냈을 때 상대가 이을 수 있는 낱말 개수 */
+function wcNextCount(word) {
+  var extra = {};
+  extra[word] = true;
+  return wcCandidates(word.charAt(word.length - 1), extra).length;
+}
+
+/* ---------- 요정이의 낱말 선택 ---------- */
+function wcPickFairyWord(ch) {
+  var cands = wcCandidates(ch);
+  var safe = [], easy = [], hard = [], i, n;
+  for (i = 0; i < cands.length; i++) {
+    n = wcNextCount(cands[i]);
+    if (n === 0) continue;                 /* 한방단어는 절대 쓰지 않음 */
+    safe.push(cands[i]);
+    if (n >= 8) easy.push(cands[i]);
+    else if (n <= 4) hard.push(cands[i]);
+  }
+  if (safe.length === 0) return null;      /* 이을 낱말이 없음 → 항복 */
+
+  var pool;
+  if (Math.random() < 0.2 && hard.length > 0) pool = hard;      /* 20% 어려운 낱말 */
+  else pool = easy.length > 0 ? easy : safe;                    /* 80% 쉬운 낱말 */
+
+  /* 주제 모드면 같은 주제 낱말을 우선 (분위기 유지) */
+  if (wordchain.catId !== 0) {
+    var themed = [];
+    for (i = 0; i < pool.length; i++) {
+      if (WORDCHAIN_CAT_OF[pool[i]] === wordchain.catId) themed.push(pool[i]);
+    }
+    if (themed.length > 0 && Math.random() < 0.7) pool = themed;
+  }
+  return pool[randInt(0, pool.length - 1)];
+}
+function wcPickStartWord() {
+  var pool = [], i, w;
+  for (i = 0; i < WORDCHAIN_WORDS.length; i++) {
+    w = WORDCHAIN_WORDS[i];
+    if (w.length !== 2) continue;
+    if (wordchain.used[w]) continue;
+    if (wordchain.catId !== 0 && WORDCHAIN_CAT_OF[w] !== wordchain.catId) continue;
+    if (wcNextCount(w) < 8) continue;
+    pool.push(w);
+  }
+  if (pool.length === 0) {
+    for (i = 0; i < WORDCHAIN_WORDS.length; i++) {
+      w = WORDCHAIN_WORDS[i];
+      if (wordchain.used[w]) continue;
+      if (wcNextCount(w) >= 5) pool.push(w);
+    }
+  }
+  if (pool.length === 0) return null;
+  return pool[randInt(0, pool.length - 1)];
+}
+
+/* ---------- 화면: 주제 선택 ---------- */
+function goToWordChainCategory() {
+  var grid = document.getElementById("wcCategoryGrid");
+  grid.innerHTML = "";
+  WORDCHAIN_CATEGORIES.forEach(function (cat) {
+    var best = wcGetBest(cat.id);
+    var btn = document.createElement("div");
+    btn.className = "wc-cat-btn";
+    btn.innerHTML =
+      '<div class="wc-cat-emoji">' + cat.emoji + '</div>' +
+      '<div class="wc-cat-body"><div class="wc-cat-name">' + cat.name + '</div>' +
+      '<div class="wc-cat-desc">' + cat.desc + '</div></div>' +
+      '<div class="wc-cat-best">' + (best.words > 0 ? "최고 " + best.words + "낱말" : "") + '</div>';
+    btn.onclick = function () { startWordChain(cat.id, cat.name); };
+    grid.appendChild(btn);
+  });
+  showScreen("screen-wc-category");
+}
+
+/* ---------- 최고 기록 ---------- */
+function wcGetBest(catId) {
+  try {
+    var raw = localStorage.getItem(WC_STORAGE_BEST + currentProfile.id);
+    var all = raw ? JSON.parse(raw) : {};
+    var v = all[catId];
+    return v ? v : { words: 0, score: 0 };
+  } catch (e) { return { words: 0, score: 0 }; }
+}
+function wcSaveBest(catId, words, score) {
+  try {
+    var raw = localStorage.getItem(WC_STORAGE_BEST + currentProfile.id);
+    var all = raw ? JSON.parse(raw) : {};
+    var cur = all[catId] || { words: 0, score: 0 };
+    var isNew = false;
+    if (words > cur.words) { cur.words = words; isNew = true; }
+    if (score > cur.score) { cur.score = score; isNew = true; }
+    all[catId] = cur;
+    localStorage.setItem(WC_STORAGE_BEST + currentProfile.id, JSON.stringify(all));
+    return isNew;
+  } catch (e) { return false; }
+}
+
+/* ---------- 게임 시작 ---------- */
+function startWordChain(catId, catName) {
+  wordchain.catId = catId;
+  wordchain.catName = catName;
+  wordchain.chain = [];
+  wordchain.used = {};
+  wordchain.myCount = 0;
+  wordchain.bonusCount = 0;
+  wordchain.wins = 0;
+  wordchain.round = 1;
+  wordchain.startTime = Date.now();
+  wordchain.finished = false;
+  wordchain.locked = false;
+
+  document.getElementById("wcChainWindow").innerHTML = "";
+  document.getElementById("wcInput").value = "";
+  document.getElementById("wcTitle").textContent = "🔗 끝말잇기 · " + catName;
+  wcUpdateScoreBar();
+  showScreen("screen-wc");
+
+  var first = wcPickStartWord();
+  wcAddChainWord(first, "fairy");
+  wcAppendBubble("fairy", "내가 먼저 시작할게! \u201c" + first + "\u201d");
+  wcStartTurnTimer();
+  wcFocusInput();
+}
+function wcFocusInput() {
+  setTimeout(function () {
+    var el = document.getElementById("wcInput");
+    if (el) el.focus();
+  }, 50);
+}
+
+/* ---------- 말풍선 / 체인 ---------- */
+function wcAppendBubble(role, text) {
+  var win = document.getElementById("wcChainWindow");
+  var b = document.createElement("div");
+  b.className = "chat-bubble " + (role === "fairy" ? "mascot" : "user");
+  b.textContent = text;
+  win.appendChild(b);
+  win.scrollTop = win.scrollHeight;
+}
+function wcAddChainWord(word, by) {
+  var bonus = (wordchain.catId !== 0 && WORDCHAIN_CAT_OF[word] === wordchain.catId);
+  wordchain.chain.push({ w: word, by: by, bonus: bonus });
+  wordchain.used[word] = true;
+  if (by === "me") {
+    wordchain.myCount += 1;
+    if (bonus) wordchain.bonusCount += 1;
+  }
+  wcUpdateScoreBar();
+}
+function wcScore() {
+  return wordchain.myCount * 10 + wordchain.bonusCount * 5 + wordchain.wins * WC_WIN_BONUS;
+}
+function wcUpdateScoreBar() {
+  var last = wordchain.chain.length > 0 ? wordchain.chain[wordchain.chain.length - 1].w : "";
+  var nextCh = last ? last.charAt(last.length - 1) : "";
+  var variants = nextCh ? wcStartVariants(nextCh) : [];
+  document.getElementById("wcNextChar").innerHTML = variants.length > 1
+    ? "다음은 <b>" + variants.join("</b> 또는 <b>") + "</b>(으)로 시작!"
+    : (nextCh ? "다음은 <b>" + nextCh + "</b>(으)로 시작!" : "");
+  document.getElementById("wcScoreInfo").textContent =
+    wordchain.myCount + "낱말 · " + wcScore() + "점" +
+    (wordchain.wins > 0 ? " · 🏆" + wordchain.wins : "");
+}
+
+/* ---------- 턴 타이머 ---------- */
+function wcStartTurnTimer() {
+  wcStopTurnTimer();
+  wordchain.turnEndAt = Date.now() + WC_TURN_SECONDS * 1000;
+  wcTickTimer();
+  wordchain.timerHandle = setInterval(wcTickTimer, 500);
+}
+function wcStopTurnTimer() {
+  if (wordchain.timerHandle) { clearInterval(wordchain.timerHandle); wordchain.timerHandle = null; }
+}
+function wcTickTimer() {
+  if (wordchain.finished) return;
+  var remain = wordchain.turnEndAt - Date.now();
+  var el = document.getElementById("wcTimer");
+  if (remain <= 0) {
+    el.textContent = "시간 종료!";
+    wcStopTurnTimer();
+    finishWordChain("timeout");
+    return;
+  }
+  var sec = Math.ceil(remain / 1000);
+  el.textContent = "남은 시간 " + sec + "초";
+  el.className = "quiz-timer" + (sec <= 10 ? " wc-hurry" : "");
+}
+
+/* ---------- 아이의 낱말 제출 ---------- */
+function submitWordChainWord() {
+  if (wordchain.finished || wordchain.locked) return;
+  var input = document.getElementById("wcInput");
+  var word = wcNormalize(input.value);
+  if (word === "") return;
+
+  var lastEntry = wordchain.chain[wordchain.chain.length - 1];
+  var lastCh = lastEntry.w.charAt(lastEntry.w.length - 1);
+  var allowed = wcStartVariants(lastCh);
+
+  /* 1) 한글 2글자 이상 */
+  if (word.length < 2 || !wcIsHangulOnly(word)) {
+    wcRetry("한글 두 글자 이상으로 써줘!");
+    return;
+  }
+  /* 2) 첫 글자 확인 (두음법칙 허용) */
+  var okStart = false;
+  for (var i = 0; i < allowed.length; i++) if (word.charAt(0) === allowed[i]) okStart = true;
+  if (!okStart) {
+    wcRetry("\u201c" + allowed.join("\u201d 또는 \u201c") + "\u201d(으)로 시작하는 낱말이어야 해!");
+    return;
+  }
+  /* 3) 중복 확인 */
+  if (wordchain.used[word]) {
+    wcRetry("\u201c" + word + "\u201d은 벌써 썼어! 다른 낱말로 해보자");
+    return;
+  }
+  /* 4) 사전 확인 — 없으면 무패널티 재입력 */
+  if (!wcInDict(word)) {
+    wcRetry("\u201c" + word + "\u201d은 요정이가 모르는 낱말이에요. 다른 낱말로 해볼까?");
+    return;
+  }
+
+  /* 통과 */
+  input.value = "";
+  wcAddChainWord(word, "me");
+  var entry = wordchain.chain[wordchain.chain.length - 1];
+  wcAppendBubble("me", word + (entry.bonus ? "  ✨+5" : ""));
+  wcStopTurnTimer();
+  wordchain.locked = true;
+  document.getElementById("wcTimer").textContent = "요정이가 생각하는 중...";
+  setTimeout(wcFairyTurn, 700);
+}
+function wcRetry(msg) {
+  wcAppendBubble("fairy", msg);
+  var input = document.getElementById("wcInput");
+  input.value = "";
+  wcFocusInput();
+}
+
+/* ---------- 요정이의 차례 ---------- */
+function wcFairyTurn() {
+  if (wordchain.finished) return;
+  var lastEntry = wordchain.chain[wordchain.chain.length - 1];
+  var lastCh = lastEntry.w.charAt(lastEntry.w.length - 1);
+  var pick = wcPickFairyWord(lastCh);
+
+  if (pick === null) {
+    /* 요정이가 막혔다 → 라운드 승리 보너스를 주고 새 낱말로 계속 (무한 모드) */
+    wordchain.wins += 1;
+    wordchain.round += 1;
+    wcUpdateScoreBar();
+    wcAppendBubble("fairy", "우와… \u201c" + lastEntry.w + "\u201d 다음을 못 찾겠어. 이 라운드는 네가 이겼어! 🏆 +" + WC_WIN_BONUS + "점");
+    var fresh = wcPickStartWord();
+    if (fresh === null) {                       /* 사전을 거의 다 써버린 경우 */
+      wordchain.locked = false;
+      finishWordChain("clear");
+      return;
+    }
+    wcAddChainWord(fresh, "fairy");
+    wcAppendBubble("fairy", wordchain.round + "라운드 시작! \u201c" + fresh + "\u201d");
+    wordchain.locked = false;
+    wcStartTurnTimer();
+    wcFocusInput();
+    return;
+  }
+  wcAddChainWord(pick, "fairy");
+  wcAppendBubble("fairy", pick);
+  wordchain.locked = false;
+  wcStartTurnTimer();
+  wcFocusInput();
+}
+
+/* ---------- 포기 ---------- */
+function giveUpWordChain() {
+  if (wordchain.finished) return;
+  finishWordChain("giveup");
+}
+
+/* ---------- 결과 ---------- */
+function finishWordChain(reason) {
+  if (wordchain.finished) return;
+  wordchain.finished = true;
+  wcStopTurnTimer();
+
+  var score = wcScore();
+  var elapsedSec = Math.round((Date.now() - wordchain.startTime) / 1000);
+
+  var earned = 0;
+  if (score >= 350) earned = 3;
+  else if (score >= 200) earned = 2;
+  else if (score >= 100) earned = 1;
+  if (earned > 0) addStickers(currentProfile.id, earned);
+
+  var isBest = wcSaveBest(wordchain.catId, wordchain.myCount, score);
+
+  saveRecordEntry(currentProfile.id, {
+    date: new Date().toISOString(),
+    subject: "wordchain",
+    level: wordchain.catName,
+    mode: "endless",
+    targetValue: null,
+    correct: wordchain.myCount,
+    total: wordchain.myCount,
+    score: score,
+    wins: wordchain.wins,
+    reason: reason,
+    elapsedSec: elapsedSec
+  });
+
+  document.getElementById("wcResultEmoji").textContent =
+    wordchain.wins > 0 ? "🏆" : (score >= 200 ? "🎉" : "💪");
+  document.getElementById("wcResultScore").textContent = wordchain.myCount + "낱말 · " + score + "점";
+
+  var reasonText =
+    reason === "clear" ? "쓸 수 있는 낱말을 거의 다 썼어요!" :
+    reason === "timeout" ? "시간이 다 됐어요." : "여기서 멈췄어요.";
+  document.getElementById("wcResultDetail").textContent =
+    wordchain.catName + " · " + reasonText +
+    (wordchain.wins > 0 ? " · 요정이를 " + wordchain.wins + "번 막았어요 🏆" : "") +
+    (wordchain.bonusCount > 0 ? " · 주제 보너스 " + wordchain.bonusCount + "개" : "") +
+    " · " + Math.floor(elapsedSec / 60) + "분 " + (elapsedSec % 60) + "초";
+  document.getElementById("wcResultBest").textContent =
+    isBest ? "🎊 최고 기록을 새로 세웠어요!" : "내 최고 기록: " + wcGetBest(wordchain.catId).words + "낱말";
+
+  var stickerBox = document.getElementById("wcResultStickers");
+  stickerBox.innerHTML = "";
+  for (var i = 0; i < earned; i++) {
+    var s = document.createElement("div");
+    s.className = "sticker earned";
+    s.textContent = "⭐";
+    stickerBox.appendChild(s);
+  }
+
+  var listBox = document.getElementById("wcResultChain");
+  listBox.innerHTML = "";
+  wordchain.chain.forEach(function (e) {
+    var chip = document.createElement("span");
+    chip.className = "wc-chip " + (e.by === "me" ? "me" : "fairy") + (e.bonus ? " bonus" : "");
+    chip.textContent = e.w;
+    listBox.appendChild(chip);
+  });
+
+  showScreen("screen-wc-result");
+}
+function retryWordChain() {
+  startWordChain(wordchain.catId, wordchain.catName);
 }
 
 /* ---------- 초기 진입 ---------- */
