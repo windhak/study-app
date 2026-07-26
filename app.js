@@ -1,5 +1,5 @@
 /* ============================================================
-   app.js — 메인 애플리케이션 로직 (v1.6)
+   app.js — 메인 애플리케이션 로직 (v1.7)
    저장소: localStorage (기기별 저장, 서버 불필요)
    ============================================================ */
 
@@ -28,13 +28,48 @@ var quiz = {
 
 var SUBJECT_LABEL = {
   math: "수학",
-  korean: "국어 낱말게임",
+  korean: "국어 낱말 게임",
   sentence: "국어 문장",
   english: "영어 단어",
   gugudan: "구구단 게임",
   wordchain: "끝말잇기"
 };
 var CHOSUNG = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+
+/* ---------- 조사 자동 선택 (받침 유무에 따라 골라 쓴다) ---------- */
+/* 숫자로 끝날 때는 마지막 자리를 한글로 읽었을 때의 받침을 본다 (1→일, 3→삼 …) */
+var DIGIT_HAS_JONG = [true, true, false, true, false, false, true, true, true, false];
+
+function hasJongseong(value) {
+  var str = String(value);
+  if (str.length === 0) return false;
+  var last = str.charAt(str.length - 1);
+  if (last >= "0" && last <= "9") return DIGIT_HAS_JONG[parseInt(last, 10)];
+  var code = last.charCodeAt(0) - 44032;
+  if (code < 0 || code > 11171) return false;
+  return (code % 28) !== 0;
+}
+/* 예) josa("사과", "은", "는") → "는" */
+function josa(value, withJong, withoutJong) {
+  return hasJongseong(value) ? withJong : withoutJong;
+}
+/* "로 / 으로"는 ㄹ 받침 뒤에서 "로"를 쓴다 (연필로, 학교로, 붓으로) */
+function josaRo(value) {
+  var str = String(value);
+  if (str.length === 0) return "로";
+  var last = str.charAt(str.length - 1);
+  if (last >= "0" && last <= "9") return DIGIT_HAS_JONG[parseInt(last, 10)] ? "으로" : "로";
+  var code = last.charCodeAt(0) - 44032;
+  if (code < 0 || code > 11171) return "로";
+  var jong = code % 28;
+  return (jong === 0 || jong === 8) ? "로" : "으로";   /* 8 = ㄹ */
+}
+
+/* 정답 비교 — 띄어쓰기 차이는 맞은 것으로 본다.
+   예) 정답이 "화석연료"여도 아이가 사전 표기대로 "화석 연료"라고 쓰면 정답 */
+function sameAnswer(a, b) {
+  return String(a).replace(/\s+/g, "") === String(b).replace(/\s+/g, "");
+}
 
 /* ---------- 화면 전환 ---------- */
 function showScreen(id) {
@@ -296,7 +331,8 @@ var MASCOT_QUICK_REPLIES = ["안녕!", "심심해", "오늘 뭐 할까?", "스�
 function goToMascotChat() {
   var win = document.getElementById("chatWindow");
   win.innerHTML = "";
-  appendChatBubble("mascot", currentProfile.nickname + "야, 안녕! 나는 공부요정이야 🧚 오늘 하고 싶은 말을 걸어봐!");
+  appendChatBubble("mascot", currentProfile.nickname + josa(currentProfile.nickname, "아", "야") +
+    ", 안녕! 나는 공부요정이야 🧚 오늘 하고 싶은 말을 걸어 봐!");
   renderMascotQuickReplies();
   document.getElementById("chatInput").value = "";
   showScreen("screen-mascot");
@@ -340,14 +376,14 @@ function getMascotReply(text) {
   for (var i = 0; i < MASCOT_DYNAMIC_KEYWORDS.sticker.length; i++) {
     if (lower.indexOf(MASCOT_DYNAMIC_KEYWORDS.sticker[i]) !== -1) {
       var count = getStickerCount(currentProfile.id);
-      return "지금까지 모은 스티커는 " + count + "개야! " + (count > 0 ? "정말 잘하고 있어 ⭐" : "오늘부터 하나씩 모아보자!");
+      return "지금까지 모은 스티커는 " + count + "개야! " + (count > 0 ? "정말 잘하고 있어 ⭐" : "오늘부터 하나씩 모아 보자!");
     }
   }
   for (var j = 0; j < MASCOT_DYNAMIC_KEYWORDS.recommend.length; j++) {
     if (lower.indexOf(MASCOT_DYNAMIC_KEYWORDS.recommend[j]) !== -1) {
-      var subjects = ["수학", "국어 낱말게임", "영어 단어", "구구단 게임"];
+      var subjects = ["수학", "국어 낱말 게임", "영어 단어", "구구단 게임"];
       var pick = subjects[randInt(0, subjects.length - 1)];
-      return "오늘은 " + pick + " 어때? 홈 화면에서 카드를 눌러서 시작해봐!";
+      return "오늘은 " + pick + " 어때? 홈 화면에서 카드를 눌러서 시작해 봐!";
     }
   }
 
@@ -531,7 +567,7 @@ function nextProblem() {
       quiz.currentProblem = { answer: spick.answers };
       qEl.classList.add("small");
       qEl.textContent = spick.sentence;
-      hintEl.textContent = "빈칸에 알맞은 낱말을 써보세요";
+      hintEl.textContent = "빈칸에 알맞은 낱말을 써 보세요";
       renderTextInput(inputArea, "정답을 입력하세요");
     } else {
       var stbank = SENTENCE_SITUATIONS[quiz.level];
@@ -539,7 +575,7 @@ function nextProblem() {
       quiz.currentProblem = { answer: stpick.answer };
       qEl.classList.add("small");
       qEl.textContent = stpick.situation;
-      hintEl.textContent = "가장 알맞은 행동을 골라보세요";
+      hintEl.textContent = "가장 알맞은 행동을 골라 보세요";
       var stchoices = shuffleArray(stpick.choices);
       renderChoiceInput(inputArea, stchoices);
     }
@@ -604,9 +640,12 @@ function submitTextAnswer() {
   if (typeof correctAns === "number") {
     isCorrect = parseInt(raw, 10) === correctAns;
   } else if (Array.isArray(correctAns)) {
-    isCorrect = correctAns.indexOf(raw) !== -1;
+    isCorrect = false;
+    for (var ai = 0; ai < correctAns.length; ai++) {
+      if (sameAnswer(raw, correctAns[ai])) { isCorrect = true; break; }
+    }
   } else {
-    isCorrect = raw === correctAns;
+    isCorrect = sameAnswer(raw, correctAns);
   }
   handleAnswerResult(isCorrect, correctAns);
 }
@@ -632,7 +671,7 @@ function handleAnswerResult(isCorrect, correctAns) {
     fb.textContent = "정답이에요! 🎉";
     fb.className = "quiz-feedback ok";
   } else {
-    fb.textContent = "아쉬워요! 정답은 " + displayAns + " 예요";
+    fb.textContent = "아쉬워요! 정답은 " + displayAns + josa(displayAns, "이에요", "예요");
     fb.className = "quiz-feedback no";
   }
   if (quiz.mode === "count") updateProgressBarCount();
@@ -713,7 +752,7 @@ function goToRecords() {
   var log = document.getElementById("recordLog");
   log.innerHTML = "";
   if (records.length === 0) {
-    log.innerHTML = '<div class="empty-state">아직 학습 기록이 없어요. 문제를 풀어보세요!</div>';
+    log.innerHTML = '<div class="empty-state">아직 학습 기록이 없어요. 문제를 풀어 보세요!</div>';
   } else {
     records.slice(0, 30).forEach(function (r) {
       var item = document.createElement("div");
@@ -725,7 +764,7 @@ function goToRecords() {
       var titleStr, valueStr;
       if (r.subject === "wordchain") {
         titleStr = SUBJECT_LABEL[r.subject] + " · " + r.level;
-        valueStr = r.correct + "낱말";
+        valueStr = "낱말 " + r.correct + "개";
       } else {
         titleStr = SUBJECT_LABEL[r.subject] + " · " + r.level + "단계";
         valueStr = r.correct + " / " + r.total;
@@ -741,15 +780,37 @@ function goToRecords() {
 }
 
 /* ============================================================
-   끝말잇기 (v1.6)
-   - 카테고리는 보너스 점수용 (판정은 전체 사전)
-   - 사전에 없는 낱말은 오답이 아니라 재입력 (무패널티)
+   끝말잇기 (v1.7)
+   - 아이의 낱말은 사전에 없어도 "연결만 되면" 인정한다
+   - 카테고리는 보너스 점수용 (사전에 있는 낱말만 보너스 대상)
    - 두음법칙 양방향 허용 / 한 게임 안에서 중복 금지
    - 한 턴 60초 + "모르겠어요" 버튼, 목표 없는 무한 모드
    ============================================================ */
 
 var WC_TURN_SECONDS = 60;
 var WC_WIN_BONUS = 30;      /* 요정이를 막았을 때 라운드 승리 보너스 */
+
+/* 사전에 없는 낱말을 받았을 때의 응답. 뜻은 모른다고 솔직히 말하되 그대로 이어간다.
+   ("{W}" 자리에 아이가 낸 낱말이 들어간다) */
+/* {W}=낱말, {은는}/{이가}=받침에 맞는 조사 (wcFillWord 가 채운다) */
+var WC_UNKNOWN_REPLIES = [
+  "\u201c{W}\u201d… 음, 무슨 뜻인지는 모르겠어. 그래도 끝말은 맞으니까 이어갈게!",
+  "\u201c{W}\u201d{이가} 무슨 뜻이야? 요정이는 모르는 낱말이야. 그래도 계속 가 보자!",
+  "\u201c{W}\u201d! 뜻은 잘 모르겠지만 이어가는 건 문제없어. 내 차례!",
+  "\u201c{W}\u201d{은는} 요정이가 아직 못 배운 낱말이야. 뜻은 모르지만 그냥 이어갈게!",
+  "\u201c{W}\u201d… 처음 듣는 낱말이라 뜻을 모르겠어. 나중에 알려 줘! 일단 이어갈게!"
+];
+/* 사전에 없는 낱말을 받았는데 이을 낱말까지 없을 때 */
+var WC_UNKNOWN_GIVEUP_REPLIES = [
+  "\u201c{W}\u201d… 뜻도 모르겠고 이어질 낱말도 못 찾겠어. 네가 이겼어! 🏆",
+  "\u201c{W}\u201d{이가} 뭔지도 모르는데 다음 낱말까지 안 떠올라… 완전히 졌어! 🏆"
+];
+/* 문구의 자리표시자를 낱말과 알맞은 조사로 채운다 */
+function wcFillWord(tpl, word) {
+  return tpl.replace("{W}", word)
+            .replace("{은는}", josa(word, "은", "는"))
+            .replace("{이가}", josa(word, "이", "가"));
+}
 var WC_HANGUL_BASE = 44032;
 var WC_CHO_N = 2, WC_CHO_R = 5, WC_CHO_O = 11;      /* ㄴ, ㄹ, ㅇ */
 var WC_PALATAL = [2, 3, 6, 7, 12, 17, 20];          /* ㅑㅒㅕㅖㅛㅠㅣ */
@@ -768,6 +829,7 @@ var wordchain = {
   timerHandle: null,
   startTime: null,
   locked: false,      /* 요정이가 생각하는 동안 입력 잠금 */
+  lastWasUnknown: false,  /* 직전에 아이가 사전 밖 낱말을 냈는지 */
   finished: false
 };
 
@@ -817,14 +879,20 @@ function wcIsHangulOnly(s) {
 }
 
 /* ---------- 사전 조회 ---------- */
+/* 요정이가 아는 낱말인지 (Tier 1 + Tier 2). 아이의 정답 판정에는 쓰지 않는다. */
 function wcInDict(word) {
-  return WORDCHAIN_CAT_OF[word] !== undefined;
+  if (WORDCHAIN_CAT_OF[word] !== undefined) return true;
+  var list = WORDCHAIN_EXT_BY_FIRST[word.charAt(0)];
+  if (list) {
+    for (var i = 0; i < list.length; i++) if (list[i] === word) return true;
+  }
+  return false;
 }
-/* 끝 글자 ch 뒤에 올 수 있는, 아직 안 쓴 낱말들 */
-function wcCandidates(ch, extraUsed) {
+/* 끝 글자 ch 뒤에 올 수 있는, 아직 안 쓴 낱말들 (index 를 지정해 티어를 고른다) */
+function wcCandidatesIn(index, ch, extraUsed) {
   var variants = wcStartVariants(ch), out = [], i, j, list, w;
   for (i = 0; i < variants.length; i++) {
-    list = WORDCHAIN_BY_FIRST[variants[i]];
+    list = index[variants[i]];
     if (!list) continue;
     for (j = 0; j < list.length; j++) {
       w = list[j];
@@ -835,16 +903,28 @@ function wcCandidates(ch, extraUsed) {
   }
   return out;
 }
-/* 그 낱말을 냈을 때 상대가 이을 수 있는 낱말 개수 */
+function wcCandidates(ch, extraUsed) {
+  return wcCandidatesIn(WORDCHAIN_BY_FIRST, ch, extraUsed);
+}
+function wcCandidatesExt(ch, extraUsed) {
+  return wcCandidatesIn(WORDCHAIN_EXT_BY_FIRST, ch, extraUsed);
+}
+/* 그 낱말을 냈을 때 요정이가 이을 수 있는 낱말 개수 (두 티어 합산) */
 function wcNextCount(word) {
   var extra = {};
   extra[word] = true;
-  return wcCandidates(word.charAt(word.length - 1), extra).length;
+  var ch = word.charAt(word.length - 1);
+  return wcCandidates(ch, extra).length + wcCandidatesExt(ch, extra).length;
 }
 
 /* ---------- 요정이의 낱말 선택 ---------- */
 function wcPickFairyWord(ch) {
-  var cands = wcCandidates(ch);
+  /* 초등 어휘(Tier 1)를 먼저 쓰고, 이을 낱말이 없을 때만 확장 어휘(Tier 2)로 내려간다 */
+  var pick = wcPickFrom(wcCandidates(ch));
+  if (pick !== null) return pick;
+  return wcPickFrom(wcCandidatesExt(ch));
+}
+function wcPickFrom(cands) {
   var safe = [], easy = [], hard = [], i, n;
   for (i = 0; i < cands.length; i++) {
     n = wcNextCount(cands[i]);
@@ -855,9 +935,25 @@ function wcPickFairyWord(ch) {
   }
   if (safe.length === 0) return null;      /* 이을 낱말이 없음 → 항복 */
 
+  /* --- 여기서부터 후보를 단계적으로 좁힌다 (각 단계는 결과가 비면 건너뛴다) --- */
   var pool;
-  if (Math.random() < 0.2 && hard.length > 0) pool = hard;      /* 20% 어려운 낱말 */
-  else pool = easy.length > 0 ? easy : safe;                    /* 80% 쉬운 낱말 */
+  /* 1단계: 이어가기 난이도 — 80% 쉬운 낱말 / 20% 조금 생각해야 하는 낱말 */
+  if (Math.random() < 0.2 && hard.length > 0) pool = hard;
+  else pool = easy.length > 0 ? easy : safe;
+
+  /* 2단계: 초등 어휘 우선 (중급 추상어보다 아이가 아는 낱말을 먼저) */
+  var elementary = [];
+  for (i = 0; i < pool.length; i++) {
+    if (WORDCHAIN_EASY[pool[i]]) elementary.push(pool[i]);
+  }
+  if (elementary.length > 0) pool = elementary;
+
+  /* 3단계: 2~3글자 우선 (긴 한자어 회피) */
+  var shortPool = [];
+  for (i = 0; i < pool.length; i++) {
+    if (pool[i].length <= 3) shortPool.push(pool[i]);
+  }
+  if (shortPool.length > 0) pool = shortPool;
 
   /* 주제 모드면 같은 주제 낱말을 우선 (분위기 유지) */
   if (wordchain.catId !== 0) {
@@ -892,6 +988,7 @@ function wcPickStartWord() {
 
 /* ---------- 화면: 주제 선택 ---------- */
 function goToWordChainCategory() {
+  wcEnsureIndex();
   var grid = document.getElementById("wcCategoryGrid");
   grid.innerHTML = "";
   WORDCHAIN_CATEGORIES.forEach(function (cat) {
@@ -902,7 +999,7 @@ function goToWordChainCategory() {
       '<div class="wc-cat-emoji">' + cat.emoji + '</div>' +
       '<div class="wc-cat-body"><div class="wc-cat-name">' + cat.name + '</div>' +
       '<div class="wc-cat-desc">' + cat.desc + '</div></div>' +
-      '<div class="wc-cat-best">' + (best.words > 0 ? "최고 " + best.words + "낱말" : "") + '</div>';
+      '<div class="wc-cat-best">' + (best.words > 0 ? "최고 낱말 " + best.words + "개" : "") + '</div>';
     btn.onclick = function () { startWordChain(cat.id, cat.name); };
     grid.appendChild(btn);
   });
@@ -934,6 +1031,7 @@ function wcSaveBest(catId, words, score) {
 
 /* ---------- 게임 시작 ---------- */
 function startWordChain(catId, catName) {
+  wcEnsureIndex();
   wordchain.catId = catId;
   wordchain.catName = catName;
   wordchain.chain = [];
@@ -945,6 +1043,7 @@ function startWordChain(catId, catName) {
   wordchain.startTime = Date.now();
   wordchain.finished = false;
   wordchain.locked = false;
+  wordchain.lastWasUnknown = false;
 
   document.getElementById("wcChainWindow").innerHTML = "";
   document.getElementById("wcInput").value = "";
@@ -991,11 +1090,12 @@ function wcUpdateScoreBar() {
   var last = wordchain.chain.length > 0 ? wordchain.chain[wordchain.chain.length - 1].w : "";
   var nextCh = last ? last.charAt(last.length - 1) : "";
   var variants = nextCh ? wcStartVariants(nextCh) : [];
+  var tailCh = variants.length > 0 ? variants[variants.length - 1] : nextCh;
   document.getElementById("wcNextChar").innerHTML = variants.length > 1
-    ? "다음은 <b>" + variants.join("</b> 또는 <b>") + "</b>(으)로 시작!"
-    : (nextCh ? "다음은 <b>" + nextCh + "</b>(으)로 시작!" : "");
+    ? "다음은 <b>" + variants.join("</b> 또는 <b>") + "</b>" + josaRo(tailCh) + " 시작!"
+    : (nextCh ? "다음은 <b>" + nextCh + "</b>" + josaRo(nextCh) + " 시작!" : "");
   document.getElementById("wcScoreInfo").textContent =
-    wordchain.myCount + "낱말 · " + wcScore() + "점" +
+    "낱말 " + wordchain.myCount + "개 · " + wcScore() + "점" +
     (wordchain.wins > 0 ? " · 🏆" + wordchain.wins : "");
 }
 
@@ -1037,35 +1137,36 @@ function submitWordChainWord() {
 
   /* 1) 한글 2글자 이상 */
   if (word.length < 2 || !wcIsHangulOnly(word)) {
-    wcRetry("한글 두 글자 이상으로 써줘!");
+    wcRetry("한글 두 글자 이상으로 써 줘!");
     return;
   }
   /* 2) 첫 글자 확인 (두음법칙 허용) */
   var okStart = false;
   for (var i = 0; i < allowed.length; i++) if (word.charAt(0) === allowed[i]) okStart = true;
   if (!okStart) {
-    wcRetry("\u201c" + allowed.join("\u201d 또는 \u201c") + "\u201d(으)로 시작하는 낱말이어야 해!");
+    var lastAllowed = allowed[allowed.length - 1];
+    wcRetry("\u201c" + allowed.join("\u201d 또는 \u201c") + "\u201d" + josaRo(lastAllowed) +
+            " 시작하는 낱말이어야 해!");
     return;
   }
   /* 3) 중복 확인 */
   if (wordchain.used[word]) {
-    wcRetry("\u201c" + word + "\u201d은 벌써 썼어! 다른 낱말로 해보자");
+    wcRetry("\u201c" + word + "\u201d" + josa(word, "은", "는") + " 벌써 썼어! 다른 낱말로 해 보자");
     return;
   }
-  /* 4) 사전 확인 — 없으면 무패널티 재입력 */
-  if (!wcInDict(word)) {
-    wcRetry("\u201c" + word + "\u201d은 요정이가 모르는 낱말이에요. 다른 낱말로 해볼까?");
-    return;
-  }
+  /* 사전에 없어도 연결만 되면 인정한다 (v1.7) */
+  var known = wcInDict(word);
 
   /* 통과 */
   input.value = "";
   wcAddChainWord(word, "me");
   var entry = wordchain.chain[wordchain.chain.length - 1];
   wcAppendBubble("me", word + (entry.bonus ? "  ✨+5" : ""));
+  /* 모르는 낱말에 대한 반응은 요정이 차례에서 한다 (이을 수 있는지 확인한 뒤 말해야 자연스럽다) */
+  wordchain.lastWasUnknown = !known;
   wcStopTurnTimer();
   wordchain.locked = true;
-  document.getElementById("wcTimer").textContent = "요정이가 생각하는 중...";
+  document.getElementById("wcTimer").textContent = "요정이가 생각하는 중…";
   setTimeout(wcFairyTurn, 700);
 }
 function wcRetry(msg) {
@@ -1087,13 +1188,20 @@ function wcFairyTurn() {
     wordchain.wins += 1;
     wordchain.round += 1;
     wcUpdateScoreBar();
-    wcAppendBubble("fairy", "우와… \u201c" + lastEntry.w + "\u201d 다음을 못 찾겠어. 이 라운드는 네가 이겼어! 🏆 +" + WC_WIN_BONUS + "점");
+    if (wordchain.lastWasUnknown) {
+      wcAppendBubble("fairy",
+        wcFillWord(WC_UNKNOWN_GIVEUP_REPLIES[randInt(0, WC_UNKNOWN_GIVEUP_REPLIES.length - 1)],
+                   lastEntry.w) + " +" + WC_WIN_BONUS + "점");
+    } else {
+      wcAppendBubble("fairy", "우와… \u201c" + lastEntry.w + "\u201d 다음을 못 찾겠어. 이 라운드는 네가 이겼어! 🏆 +" + WC_WIN_BONUS + "점");
+    }
     var fresh = wcPickStartWord();
     if (fresh === null) {                       /* 사전을 거의 다 써버린 경우 */
       wordchain.locked = false;
       finishWordChain("clear");
       return;
     }
+    wordchain.lastWasUnknown = false;
     wcAddChainWord(fresh, "fairy");
     wcAppendBubble("fairy", wordchain.round + "라운드 시작! \u201c" + fresh + "\u201d");
     wordchain.locked = false;
@@ -1101,8 +1209,13 @@ function wcFairyTurn() {
     wcFocusInput();
     return;
   }
+  if (wordchain.lastWasUnknown) {
+    wcAppendBubble("fairy",
+      wcFillWord(WC_UNKNOWN_REPLIES[randInt(0, WC_UNKNOWN_REPLIES.length - 1)], lastEntry.w));
+  }
   wcAddChainWord(pick, "fairy");
-  wcAppendBubble("fairy", pick);
+  wcAppendBubble("fairy", wordchain.lastWasUnknown ? "그럼 나는 \u201c" + pick + "\u201d!" : pick);
+  wordchain.lastWasUnknown = false;
   wordchain.locked = false;
   wcStartTurnTimer();
   wcFocusInput();
@@ -1147,7 +1260,8 @@ function finishWordChain(reason) {
 
   document.getElementById("wcResultEmoji").textContent =
     wordchain.wins > 0 ? "🏆" : (score >= 200 ? "🎉" : "💪");
-  document.getElementById("wcResultScore").textContent = wordchain.myCount + "낱말 · " + score + "점";
+  document.getElementById("wcResultScore").textContent =
+    "낱말 " + wordchain.myCount + "개 · " + score + "점";
 
   var reasonText =
     reason === "clear" ? "쓸 수 있는 낱말을 거의 다 썼어요!" :
@@ -1158,7 +1272,7 @@ function finishWordChain(reason) {
     (wordchain.bonusCount > 0 ? " · 주제 보너스 " + wordchain.bonusCount + "개" : "") +
     " · " + Math.floor(elapsedSec / 60) + "분 " + (elapsedSec % 60) + "초";
   document.getElementById("wcResultBest").textContent =
-    isBest ? "🎊 최고 기록을 새로 세웠어요!" : "내 최고 기록: " + wcGetBest(wordchain.catId).words + "낱말";
+    isBest ? "🎊 최고 기록을 새로 세웠어요!" : "내 최고 기록: 낱말 " + wcGetBest(wordchain.catId).words + "개";
 
   var stickerBox = document.getElementById("wcResultStickers");
   stickerBox.innerHTML = "";
