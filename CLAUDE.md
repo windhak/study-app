@@ -62,6 +62,7 @@ version.json        배포 버전 표식. 앱이 캐시 무시로 읽어 새 버
 | v1.8 | 영어 단어 1,000낱말·영어 문장 200문항으로 확장 + 영어만 학년제 10단계(초1~고3) + 문제당 1분 제한(카운트다운·초과 시 오답) + 다음 문제 전 정답 3초 표시 |
 | v1.8.1 | 문제당 카운트다운 강조 표시 + 새 버전 자동 감지(version.json ↔ APP_VERSION) |
 | v1.8.2 | 난이도 선택 화면에 단계별 문제 유형 표시(levelTypeLabel) + 영어 문장 빈칸의 '뜻 보기' 토글(ENGLISH_SENTENCES fill의 meaning) |
+| v1.8.3 | 영어 문장 정답 시 완성 문장 음성 재생(speakEnglish, quiz.currentAnswerSpeakText) |
 
 ### 난이도 단계 (v1.8~)
 
