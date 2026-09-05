@@ -24,6 +24,7 @@ var quiz = {
   qTimerHandle: null,  // 문제당 카운트다운 setInterval 핸들
   currentProblem: null,
   currentSpeakText: null, // 영어 단어 발음 듣기용 텍스트
+  currentSentenceMeaning: null, // 영어 문장(빈칸) '뜻 보기'용 한국어 뜻
   usedWords: [],
   awaitingNext: false
 };
@@ -57,6 +58,16 @@ function levelDisplay(subject, level) {
     return level + "단계 · " + ENGLISH_GRADE_LABELS[level - 1];
   }
   return level + "단계";
+}
+/* 난이도 선택 화면에서 각 단계가 어떤 유형의 문제인지 알려 준다 */
+function levelTypeLabel(subject, level) {
+  if (subject === "esentence") return level <= 5 ? "빈칸 단어 맞추기" : "문장 해석(뜻 고르기)";
+  if (subject === "sentence") return level <= 2 ? "빈칸 채우기" : "상황 판단";
+  if (subject === "korean") return "초성 보고 낱말 맞추기";
+  if (subject === "english") return "단어 뜻 맞추기";
+  if (subject === "math") return "계산 문제";
+  if (subject === "gugudan") return "곱셈·나눗셈";
+  return "";
 }
 var CHOSUNG = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 
@@ -98,7 +109,7 @@ function sameAnswer(a, b) {
 /* ---------- 새 버전 자동 감지 ----------
    GitHub Pages에 새로 배포하면, 새로고침을 직접 하지 않아도 알려 준다.
    ★ 배포할 때마다 아래 APP_VERSION 과 저장소 루트의 version.json 값을 함께 올릴 것. */
-var APP_VERSION = "1.8.1";
+var APP_VERSION = "1.8.2";
 var updateAvailable = false;
 
 function checkForUpdate() {
@@ -497,8 +508,12 @@ function goToDifficulty(subject) {
         for (var s2 = level; s2 < 5; s2++) starStr += "☆";
         sub.textContent = starStr;
       }
+      var typeEl = document.createElement("div");
+      typeEl.className = "lv-type";
+      typeEl.textContent = levelTypeLabel(subject, level);
       btn.appendChild(label);
       btn.appendChild(sub);
+      btn.appendChild(typeEl);
       btn.onclick = function () { goToSetup(level); };
       grid.appendChild(btn);
     })(lv);
@@ -679,6 +694,14 @@ function nextProblem() {
   speakBtn.classList.add("hidden");
   quiz.currentSpeakText = null;
   qEl.classList.remove("small");
+  /* '뜻 보기'(영어 문장 빈칸) 초기화 */
+  var meaningBtn = document.getElementById("showMeaningBtn");
+  var meaningEl = document.getElementById("quizMeaning");
+  meaningBtn.classList.add("hidden");
+  meaningBtn.textContent = "💡 뜻 보기";
+  meaningEl.classList.add("hidden");
+  meaningEl.textContent = "";
+  quiz.currentSentenceMeaning = null;
 
   if (quiz.subject === "math") {
     var p = generateMathProblem(quiz.level);
@@ -738,6 +761,10 @@ function nextProblem() {
       speakBtn.classList.remove("hidden");
     } else {
       hintEl.textContent = "빈칸에 알맞은 단어를 골라 보세요";
+      if (espick.meaning) {
+        quiz.currentSentenceMeaning = espick.meaning;
+        document.getElementById("showMeaningBtn").classList.remove("hidden");
+      }
     }
     renderChoiceInput(inputArea, shuffleArray(espick.choices));
   }
@@ -753,6 +780,20 @@ function speakCurrentWord() {
     utter.rate = 0.9;
     window.speechSynthesis.speak(utter);
   } catch (e) { /* 음성 합성을 지원하지 않는 기기는 조용히 무시 */ }
+}
+/* 영어 문장(빈칸) 문제에서 한국어 뜻을 보이거나 숨긴다 */
+function toggleSentenceMeaning() {
+  if (!quiz.currentSentenceMeaning) return;
+  var meaningEl = document.getElementById("quizMeaning");
+  var btn = document.getElementById("showMeaningBtn");
+  if (meaningEl.classList.contains("hidden")) {
+    meaningEl.textContent = "뜻: " + quiz.currentSentenceMeaning;
+    meaningEl.classList.remove("hidden");
+    btn.textContent = "💡 뜻 숨기기";
+  } else {
+    meaningEl.classList.add("hidden");
+    btn.textContent = "💡 뜻 보기";
+  }
 }
 function pickUnusedWord(bank, key) {
   var remaining = bank.filter(function (w) { return quiz.usedWords.indexOf(w[key]) === -1; });

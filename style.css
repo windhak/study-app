@@ -270,12 +270,13 @@ img.profile-avatar { object-fit: cover; }
 /* ---------- 난이도 선택 ---------- */
 .level-grid { display: flex; flex-direction: column; gap: 10px; }
 .level-btn {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
   border: 2px solid var(--line); border-radius: 16px; padding: 14px 16px;
   background: var(--card-bg); cursor: pointer;
 }
 .level-btn .lv-label { font-weight: 800; font-size: 15px; }
 .level-btn .lv-stars { color: var(--game-dark); font-size: 14px; }
+.level-btn .lv-type { flex-basis: 100%; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
 
 /* ---------- 설정 화면 (시간/문제수) ---------- */
 .setup-toggle { display: flex; gap: 10px; margin-bottom: 16px; }
@@ -348,6 +349,15 @@ img.profile-avatar { object-fit: cover; }
 }
 .speak-btn:active { transform: scale(0.96); }
 .quiz-hint { font-size: 14px; color: var(--ink-soft); margin-top: 8px; }
+.quiz-meaning {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
 .quiz-input {
   width: 100%; padding: 14px; font-size: 20px; text-align: center;
   border-radius: 14px; border: 2px solid var(--line); margin-bottom: 14px;

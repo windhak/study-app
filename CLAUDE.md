@@ -60,13 +60,16 @@ version.json        배포 버전 표식. 앱이 캐시 무시로 읽어 새 버
 | v1.6 | 끝말잇기 신설 (사전 1,497낱말) |
 | v1.7 | 끝말잇기 확장(10,000낱말) + 자유 입력 허용 + 화면 문구 맞춤법 검수 |
 | v1.8 | 영어 단어 1,000낱말·영어 문장 200문항으로 확장 + 영어만 학년제 10단계(초1~고3) + 문제당 1분 제한(카운트다운·초과 시 오답) + 다음 문제 전 정답 3초 표시 |
+| v1.8.1 | 문제당 카운트다운 강조 표시 + 새 버전 자동 감지(version.json ↔ APP_VERSION) |
+| v1.8.2 | 난이도 선택 화면에 단계별 문제 유형 표시(levelTypeLabel) + 영어 문장 빈칸의 '뜻 보기' 토글(ENGLISH_SENTENCES fill의 meaning) |
 
 ### 난이도 단계 (v1.8~)
 
 - **영어(단어·문장)만 10단계**로, 학년제다: 1=초1, 2=초3, 3=초4, 4=초6, 5=중1, 6=중2, 7=중3, 8=고1, 9=고2, 10=고3.
   라벨은 `ENGLISH_GRADE_LABELS`(app.js), 과목 판별은 `isEnglishSubject()`, 단계 상한은 `maxLevelFor()`.
 - **수학·국어 낱말·국어 문장·구구단은 기존 5단계** 그대로. 난이도 선택기는 `goToDifficulty()`에서 과목별로 분기한다.
-- 영어 문장 데이터는 `ENGLISH_SENTENCES`(data.js): 1~5단계 `type:"fill"`(빈칸+영단어 4지선다), 6~10단계 `type:"meaning"`(문장 뜻 4지선다). `choices`를 데이터에 함께 담는다.
+- 영어 문장 데이터는 `ENGLISH_SENTENCES`(data.js): 1~5단계 `type:"fill"`(빈칸+영단어 4지선다, `meaning`=문장의 한국어 뜻 — 퀴즈 화면 '뜻 보기' 버튼 `toggleSentenceMeaning()`에 쓰인다), 6~10단계 `type:"meaning"`(문장 뜻 4지선다). `choices`를 데이터에 함께 담는다.
+- 난이도 선택 화면은 각 단계의 문제 유형을 `levelTypeLabel(subject, level)`로 함께 표시한다(영어 문장·국어·수학 등 전 과목).
 - **문제당 제한시간**은 `QUESTION_SECONDS`(=60), 표시는 `#quizQTimer`. 초과 시 `onQuestionTimeout()`이 오답 처리한다. 세션 시간/문제수 모드는 그대로 두고 문제당 타이머를 추가로 얹은 구조다. 정답 표시 시간은 `REVEAL_MS`(=3000). 끝말잇기는 자체 60초 타이머라 제외.
 
 ## 6. 끝말잇기 핵심 규칙 (건드릴 때 주의)
