@@ -25,6 +25,7 @@ var quiz = {
   currentProblem: null,
   currentSpeakText: null, // 영어 단어 발음 듣기용 텍스트
   currentSentenceMeaning: null, // 영어 문장(빈칸) '뜻 보기'용 한국어 뜻
+  currentAnswerSpeakText: null, // 정답을 맞혔을 때 읽어 줄 완성된 영어 문장
   usedWords: [],
   awaitingNext: false
 };
@@ -109,7 +110,7 @@ function sameAnswer(a, b) {
 /* ---------- 새 버전 자동 감지 ----------
    GitHub Pages에 새로 배포하면, 새로고침을 직접 하지 않아도 알려 준다.
    ★ 배포할 때마다 아래 APP_VERSION 과 저장소 루트의 version.json 값을 함께 올릴 것. */
-var APP_VERSION = "1.8.2";
+var APP_VERSION = "1.8.3";
 var updateAvailable = false;
 
 function checkForUpdate() {
@@ -702,6 +703,7 @@ function nextProblem() {
   meaningEl.classList.add("hidden");
   meaningEl.textContent = "";
   quiz.currentSentenceMeaning = null;
+  quiz.currentAnswerSpeakText = null;
 
   if (quiz.subject === "math") {
     var p = generateMathProblem(quiz.level);
@@ -758,9 +760,12 @@ function nextProblem() {
     if (espick.type === "meaning") {
       hintEl.textContent = "이 문장의 뜻을 골라 보세요";
       quiz.currentSpeakText = espick.sentence;   /* 문장 읽어 주기 */
+      quiz.currentAnswerSpeakText = espick.sentence;   /* 정답 시 문장 음성 */
       speakBtn.classList.remove("hidden");
     } else {
       hintEl.textContent = "빈칸에 알맞은 단어를 골라 보세요";
+      /* 정답 시 빈칸을 채운 완성 문장을 읽어 준다 */
+      quiz.currentAnswerSpeakText = espick.sentence.replace("___", espick.answer);
       if (espick.meaning) {
         quiz.currentSentenceMeaning = espick.meaning;
         document.getElementById("showMeaningBtn").classList.remove("hidden");
@@ -770,16 +775,19 @@ function nextProblem() {
   }
   startQuestionTimer();
 }
-function speakCurrentWord() {
-  if (!quiz.currentSpeakText) return;
+function speakEnglish(text) {
+  if (!text) return;
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   try {
     window.speechSynthesis.cancel();
-    var utter = new SpeechSynthesisUtterance(quiz.currentSpeakText);
+    var utter = new SpeechSynthesisUtterance(text);
     utter.lang = "en-US";
     utter.rate = 0.9;
     window.speechSynthesis.speak(utter);
   } catch (e) { /* 음성 합성을 지원하지 않는 기기는 조용히 무시 */ }
+}
+function speakCurrentWord() {
+  speakEnglish(quiz.currentSpeakText);
 }
 /* 영어 문장(빈칸) 문제에서 한국어 뜻을 보이거나 숨긴다 */
 function toggleSentenceMeaning() {
@@ -865,6 +873,8 @@ function handleAnswerResult(isCorrect, correctAns, timedOut) {
   if (isCorrect) {
     fb.textContent = "정답이에요! 🎉 (정답: " + displayAns + ")";
     fb.className = "quiz-feedback ok";
+    /* 영어 문장 문제는 정답을 맞히면 완성된 영어 문장을 읽어 준다 */
+    if (quiz.currentAnswerSpeakText) speakEnglish(quiz.currentAnswerSpeakText);
   } else {
     var head = timedOut ? "시간 초과예요! 정답은 " : "아쉬워요! 정답은 ";
     /* 문장형 정답(마침표·물음표 등으로 끝남)에는 "이에요/예요"를 붙이지 않고 따옴표로 보여 준다 */
