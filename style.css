@@ -297,6 +297,44 @@ img.profile-avatar { object-fit: cover; }
 }
 .quiz-progress-bar { height: 100%; background: var(--success); width: 0%; }
 .quiz-timer { text-align: right; font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
+
+/* 문제당 남은 시간 — 크게, 가운데, 눈에 확 띄게 */
+.quiz-qtimer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 360px;
+  margin: 2px auto 14px;
+  padding: 10px 18px;
+  background: #eaecff;
+  border: 3px solid var(--english);
+  border-radius: 16px;
+  color: var(--english-dark);
+  box-shadow: 0 3px 10px rgba(108, 92, 231, 0.18);
+}
+.quiz-qtimer .qt-label { font-size: 15px; font-weight: 700; }
+.quiz-qtimer .qt-time {
+  margin-left: 12px;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+}
+.quiz-qtimer.warn {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+  box-shadow: 0 3px 14px rgba(255, 95, 109, 0.45);
+  -webkit-animation: qtimer-pulse 0.9s ease-in-out infinite;
+  animation: qtimer-pulse 0.9s ease-in-out infinite;
+}
+@-webkit-keyframes qtimer-pulse {
+  0%, 100% { -webkit-transform: scale(1); }
+  50% { -webkit-transform: scale(1.06); }
+}
+@keyframes qtimer-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
 .quiz-card {
   background: var(--card-bg); border-radius: 20px; padding: 26px 20px;
   text-align: center; margin-bottom: 20px; border: 2px solid var(--line);

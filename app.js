@@ -575,10 +575,17 @@ function renderQuestionTimer() {
   var mm = Math.floor(sec / 60);
   var ss = sec % 60;
   var el = document.getElementById("quizQTimer");
-  el.textContent = "이 문제 남은 시간 " + mm + ":" + (ss < 10 ? "0" + ss : ss);
-  /* 10초 이하로 남으면 빨갛게 강조 (CSS 변경 없이 인라인으로) */
-  el.style.color = sec <= 10 ? "#e2483d" : "";
-  el.style.fontWeight = sec <= 10 ? "700" : "";
+  el.classList.remove("hidden");
+  el.innerHTML = '<span class="qt-label">⏱ 남은 시간</span>' +
+                 '<span class="qt-time">' + mm + ":" + (ss < 10 ? "0" + ss : ss) + '</span>';
+  /* 10초 이하로 남으면 빨간색 + 두근두근 강조 */
+  if (sec <= 10) el.classList.add("warn"); else el.classList.remove("warn");
+}
+function hideQuestionTimer() {
+  var el = document.getElementById("quizQTimer");
+  el.classList.add("hidden");
+  el.classList.remove("warn");
+  el.textContent = "";
 }
 function onQuestionTimeout() {
   if (quiz.awaitingNext) return;
@@ -764,7 +771,7 @@ function submitChoiceAnswer(chosen, btnEl) {
 function handleAnswerResult(isCorrect, correctAns, timedOut) {
   quiz.awaitingNext = true;
   stopQuestionTimer();
-  document.getElementById("quizQTimer").textContent = "";
+  hideQuestionTimer();
   quiz.total += 1;
   if (isCorrect) quiz.correct += 1;
   var fb = document.getElementById("quizFeedback");
@@ -793,7 +800,7 @@ function handleAnswerResult(isCorrect, correctAns, timedOut) {
 function finishQuiz() {
   if (quiz.timerHandle) clearInterval(quiz.timerHandle);
   stopQuestionTimer();
-  document.getElementById("quizQTimer").textContent = "";
+  hideQuestionTimer();
   var elapsedSec = Math.round((Date.now() - quiz.startTime) / 1000);
   var accuracy = quiz.total > 0 ? Math.round((quiz.correct / quiz.total) * 100) : 0;
 
