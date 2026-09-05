@@ -9,6 +9,12 @@
 <body>
 <div class="app" id="app">
 
+  <!-- 새 버전 알림 배너 (게임 중이 아닐 때만 표시) -->
+  <div class="update-banner hidden" id="updateBanner">
+    <span class="ub-text">✨ 새 버전이 나왔어요!</span>
+    <button type="button" class="ub-btn" onclick="applyUpdate()">지금 받기</button>
+  </div>
+
   <div class="topbar">
     <div class="brand">공부<span>요정</span></div>
     <div class="topbar-actions" id="topbarActions" style="display:none;">

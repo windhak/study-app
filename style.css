@@ -397,6 +397,35 @@ img.profile-avatar { object-fit: cover; }
 
 /* ---------- 유틸 ---------- */
 .hidden { display: none !important; }
+
+/* 새 버전 알림 배너 */
+.update-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  background: var(--english);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.update-banner .ub-text { font-size: 15px; }
+.update-banner .ub-btn {
+  margin-left: 12px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--english-dark);
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+}
 .mt-8 { margin-top: 8px; }
 .mt-16 { margin-top: 16px; }
 

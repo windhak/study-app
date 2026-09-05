@@ -95,12 +95,55 @@ function sameAnswer(a, b) {
   return String(a).replace(/\s+/g, "") === String(b).replace(/\s+/g, "");
 }
 
+/* ---------- 새 버전 자동 감지 ----------
+   GitHub Pages에 새로 배포하면, 새로고침을 직접 하지 않아도 알려 준다.
+   ★ 배포할 때마다 아래 APP_VERSION 과 저장소 루트의 version.json 값을 함께 올릴 것. */
+var APP_VERSION = "1.8.1";
+var updateAvailable = false;
+
+function checkForUpdate() {
+  try {
+    var xhr = new XMLHttpRequest();
+    /* 캐시를 피해 항상 최신 version.json 을 읽는다 */
+    xhr.open("GET", "version.json?_=" + Date.now(), true);
+    try { xhr.setRequestHeader("Cache-Control", "no-cache"); } catch (e1) {}
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      if (xhr.status < 200 || xhr.status >= 300) return;   /* 오프라인·실패는 조용히 무시 */
+      var latest;
+      try { latest = JSON.parse(xhr.responseText).version; } catch (e2) { return; }
+      if (latest && latest !== APP_VERSION) {
+        updateAvailable = true;
+        refreshUpdateBanner();
+      }
+    };
+    xhr.send();
+  } catch (e) { /* 지원하지 않는 환경은 조용히 무시 */ }
+}
+/* 퀴즈·끝말잇기를 푸는 도중에는 진행이 날아가지 않게 배너를 숨긴다 */
+function isBusyScreen() {
+  if (quizIsActive()) return true;
+  var wc = document.getElementById("screen-wc");
+  return wc && wc.classList.contains("active");
+}
+function refreshUpdateBanner() {
+  var banner = document.getElementById("updateBanner");
+  if (!banner) return;
+  if (updateAvailable && !isBusyScreen()) banner.classList.remove("hidden");
+  else banner.classList.add("hidden");
+}
+function applyUpdate() {
+  /* 새로고침하면 브라우저가 파일을 재검증해 새 버전을 받아 온다 */
+  location.reload();
+}
+
 /* ---------- 화면 전환 ---------- */
 function showScreen(id) {
   var screens = document.querySelectorAll(".screen");
   for (var i = 0; i < screens.length; i++) screens[i].classList.remove("active");
   document.getElementById(id).classList.add("active");
   window.scrollTo(0, 0);
+  refreshUpdateBanner();
 }
 
 /* ---------- 저장소 헬퍼 ---------- */
@@ -501,6 +544,8 @@ function changeSetupValue(delta) {
 
 /* ---------- 퀴즈 시작/문제 생성 ---------- */
 function startQuiz() {
+  /* 새 버전이 대기 중이면, 퀴즈를 시작하지 않고 먼저 최신 버전으로 적용한다 */
+  if (updateAvailable) { applyUpdate(); return; }
   quiz.targetValue = quiz.mode === "time"
     ? parseInt(document.getElementById("setupTimeValue").textContent, 10)
     : parseInt(document.getElementById("setupCountValue").textContent, 10);
@@ -1424,5 +1469,12 @@ window.onload = function () {
     selectProfile(last.id);
   } else {
     goToProfileSelect();
+  }
+  /* 실행 시 새 버전 확인, 그리고 앱으로 되돌아올 때마다 다시 확인 */
+  checkForUpdate();
+  if (document.addEventListener) {
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) checkForUpdate();
+    });
   }
 };
