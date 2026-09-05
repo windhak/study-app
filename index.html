@@ -100,6 +100,11 @@
         <div class="subj-name">영어 단어</div>
         <div class="subj-desc">영어 단어의 뜻을 맞혀요</div>
       </div>
+      <div class="subject-card english" onclick="goToDifficulty('esentence')">
+        <div class="subj-emoji">📖</div>
+        <div class="subj-name">영어 문장</div>
+        <div class="subj-desc">빈칸 채우기와 문장 뜻으로 배워요</div>
+      </div>
       <div class="subject-card game" onclick="goToDifficulty('gugudan')">
         <div class="subj-emoji">🎮</div>
         <div class="subj-name">구구단 게임</div>
@@ -178,7 +183,7 @@
   <!-- 3. 난이도 선택 화면 -->
   <div class="screen" id="screen-difficulty">
     <div class="section-title" id="diffTitle">난이도 선택</div>
-    <div class="section-sub">1단계(쉬움)부터 5단계(어려움)까지 중에서 골라 보세요</div>
+    <div class="section-sub" id="diffSub">1단계(쉬움)부터 5단계(어려움)까지 중에서 골라 보세요</div>
     <div class="level-grid" id="levelGrid"></div>
     <button class="btn btn-outline mt-16" onclick="goToHome()">◀ 홈으로</button>
   </div>
@@ -218,6 +223,7 @@
   <div class="screen" id="screen-quiz">
     <div class="quiz-progress"><div class="quiz-progress-bar" id="quizProgressBar"></div></div>
     <div class="quiz-timer" id="quizTimer"></div>
+    <div class="quiz-timer" id="quizQTimer"></div>
 
     <div class="quiz-card">
       <div class="quiz-question" id="quizQuestion">문제</div>
