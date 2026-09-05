@@ -11,8 +11,8 @@ var newProfilePhotoData = null;   // 새 프로필 생성 시 선택한 사진 (
 var photoChangeTargetId = null;   // 기존 프로필 사진 변경 대상 id
 
 var quiz = {
-  subject: null,      // 'math' | 'korean' | 'sentence' | 'english' | 'gugudan'
-  level: null,        // 1~5
+  subject: null,      // 'math' | 'korean' | 'sentence' | 'english' | 'esentence' | 'gugudan'
+  level: null,        // 국어·수학·구구단은 1~5, 영어·영어문장은 1~10(학년제)
   mode: null,         // 'time' | 'count'
   targetValue: null,  // 분 또는 문제수
   correct: 0,
@@ -20,20 +20,44 @@ var quiz = {
   startTime: null,
   endAt: null,         // time 모드일 때 종료 시각(ms)
   timerHandle: null,
+  qEndAt: null,        // 현재 문제의 제한시간 종료 시각(ms) — 문제당 1분
+  qTimerHandle: null,  // 문제당 카운트다운 setInterval 핸들
   currentProblem: null,
   currentSpeakText: null, // 영어 단어 발음 듣기용 텍스트
   usedWords: [],
   awaitingNext: false
 };
 
+/* 문제당 제한시간(초). 초과하면 오답 처리하고 다음 문제로 넘어간다. */
+var QUESTION_SECONDS = 60;
+/* 정답을 보여 주는 시간(ms) — 다음 문제로 넘어가기 전 잠깐 정답을 보여 준다. */
+var REVEAL_MS = 3000;
+
 var SUBJECT_LABEL = {
   math: "수학",
   korean: "국어 낱말 게임",
   sentence: "국어 문장",
   english: "영어 단어",
+  esentence: "영어 문장",
   gugudan: "구구단 게임",
   wordchain: "끝말잇기"
 };
+
+/* 영어(단어·문장)는 학년제 10단계. 단계 번호(1~10) → 학년 라벨 */
+var ENGLISH_GRADE_LABELS = ["초1", "초3", "초4", "초6", "중1", "중2", "중3", "고1", "고2", "고3"];
+function isEnglishSubject(subject) {
+  return subject === "english" || subject === "esentence";
+}
+function maxLevelFor(subject) {
+  return isEnglishSubject(subject) ? 10 : 5;
+}
+/* 결과·기록 화면에 쓸 단계 표기. 영어는 학년 라벨을 함께 보여 준다. */
+function levelDisplay(subject, level) {
+  if (isEnglishSubject(subject)) {
+    return level + "단계 · " + ENGLISH_GRADE_LABELS[level - 1];
+  }
+  return level + "단계";
+}
 var CHOSUNG = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 
 /* ---------- 조사 자동 선택 (받침 유무에 따라 골라 쓴다) ---------- */
@@ -71,12 +95,55 @@ function sameAnswer(a, b) {
   return String(a).replace(/\s+/g, "") === String(b).replace(/\s+/g, "");
 }
 
+/* ---------- 새 버전 자동 감지 ----------
+   GitHub Pages에 새로 배포하면, 새로고침을 직접 하지 않아도 알려 준다.
+   ★ 배포할 때마다 아래 APP_VERSION 과 저장소 루트의 version.json 값을 함께 올릴 것. */
+var APP_VERSION = "1.8.1";
+var updateAvailable = false;
+
+function checkForUpdate() {
+  try {
+    var xhr = new XMLHttpRequest();
+    /* 캐시를 피해 항상 최신 version.json 을 읽는다 */
+    xhr.open("GET", "version.json?_=" + Date.now(), true);
+    try { xhr.setRequestHeader("Cache-Control", "no-cache"); } catch (e1) {}
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      if (xhr.status < 200 || xhr.status >= 300) return;   /* 오프라인·실패는 조용히 무시 */
+      var latest;
+      try { latest = JSON.parse(xhr.responseText).version; } catch (e2) { return; }
+      if (latest && latest !== APP_VERSION) {
+        updateAvailable = true;
+        refreshUpdateBanner();
+      }
+    };
+    xhr.send();
+  } catch (e) { /* 지원하지 않는 환경은 조용히 무시 */ }
+}
+/* 퀴즈·끝말잇기를 푸는 도중에는 진행이 날아가지 않게 배너를 숨긴다 */
+function isBusyScreen() {
+  if (quizIsActive()) return true;
+  var wc = document.getElementById("screen-wc");
+  return wc && wc.classList.contains("active");
+}
+function refreshUpdateBanner() {
+  var banner = document.getElementById("updateBanner");
+  if (!banner) return;
+  if (updateAvailable && !isBusyScreen()) banner.classList.remove("hidden");
+  else banner.classList.add("hidden");
+}
+function applyUpdate() {
+  /* 새로고침하면 브라우저가 파일을 재검증해 새 버전을 받아 온다 */
+  location.reload();
+}
+
 /* ---------- 화면 전환 ---------- */
 function showScreen(id) {
   var screens = document.querySelectorAll(".screen");
   for (var i = 0; i < screens.length; i++) screens[i].classList.remove("active");
   document.getElementById(id).classList.add("active");
   window.scrollTo(0, 0);
+  refreshUpdateBanner();
 }
 
 /* ---------- 저장소 헬퍼 ---------- */
@@ -405,23 +472,33 @@ function getMascotReply(text) {
 function goToDifficulty(subject) {
   quiz.subject = subject;
   document.getElementById("diffTitle").textContent = SUBJECT_LABEL[subject] + " - 난이도 선택";
+  var english = isEnglishSubject(subject);
+  var maxLevel = maxLevelFor(subject);
+  document.getElementById("diffSub").textContent = english
+    ? "학년에 맞는 단계를 골라 보세요 (1단계 초1 ~ 10단계 고3)"
+    : "1단계(쉬움)부터 5단계(어려움)까지 중에서 골라 보세요";
   var grid = document.getElementById("levelGrid");
   grid.innerHTML = "";
-  for (var lv = 1; lv <= 5; lv++) {
+  for (var lv = 1; lv <= maxLevel; lv++) {
     (function (level) {
       var btn = document.createElement("div");
       btn.className = "level-btn";
       var label = document.createElement("div");
       label.className = "lv-label";
       label.textContent = level + "단계";
-      var stars = document.createElement("div");
-      stars.className = "lv-stars";
-      var starStr = "";
-      for (var s = 0; s < level; s++) starStr += "★";
-      for (var s2 = level; s2 < 5; s2++) starStr += "☆";
-      stars.textContent = starStr;
+      var sub = document.createElement("div");
+      sub.className = "lv-stars";
+      if (english) {
+        /* 영어는 별점 대신 학년 라벨을 보여 준다 (10단계라 별 5개로는 부족) */
+        sub.textContent = ENGLISH_GRADE_LABELS[level - 1];
+      } else {
+        var starStr = "";
+        for (var s = 0; s < level; s++) starStr += "★";
+        for (var s2 = level; s2 < 5; s2++) starStr += "☆";
+        sub.textContent = starStr;
+      }
       btn.appendChild(label);
-      btn.appendChild(stars);
+      btn.appendChild(sub);
       btn.onclick = function () { goToSetup(level); };
       grid.appendChild(btn);
     })(lv);
@@ -467,6 +544,8 @@ function changeSetupValue(delta) {
 
 /* ---------- 퀴즈 시작/문제 생성 ---------- */
 function startQuiz() {
+  /* 새 버전이 대기 중이면, 퀴즈를 시작하지 않고 먼저 최신 버전으로 적용한다 */
+  if (updateAvailable) { applyUpdate(); return; }
   quiz.targetValue = quiz.mode === "time"
     ? parseInt(document.getElementById("setupTimeValue").textContent, 10)
     : parseInt(document.getElementById("setupCountValue").textContent, 10);
@@ -508,6 +587,64 @@ function updateProgressBarTime() {
 function updateProgressBarCount() {
   var pct = Math.min(100, (quiz.total / quiz.targetValue) * 100);
   document.getElementById("quizProgressBar").style.width = pct + "%";
+}
+
+/* ---------- 문제당 제한시간 (1분) ---------- */
+function quizIsActive() {
+  var el = document.getElementById("screen-quiz");
+  return el && el.classList.contains("active");
+}
+function startQuestionTimer() {
+  stopQuestionTimer();
+  quiz.qEndAt = Date.now() + QUESTION_SECONDS * 1000;
+  renderQuestionTimer();
+  quiz.qTimerHandle = setInterval(updateQuestionTimer, 250);
+}
+function stopQuestionTimer() {
+  if (quiz.qTimerHandle) { clearInterval(quiz.qTimerHandle); quiz.qTimerHandle = null; }
+}
+function updateQuestionTimer() {
+  /* 퀴즈 화면을 벗어났으면(홈으로 나감 등) 타이머를 멈춘다 */
+  if (!quizIsActive()) { stopQuestionTimer(); return; }
+  if (quiz.awaitingNext) { stopQuestionTimer(); return; }
+  if (Date.now() >= quiz.qEndAt) {
+    stopQuestionTimer();
+    onQuestionTimeout();
+    return;
+  }
+  renderQuestionTimer();
+}
+function renderQuestionTimer() {
+  var remainMs = Math.max(0, quiz.qEndAt - Date.now());
+  var sec = Math.ceil(remainMs / 1000);
+  var mm = Math.floor(sec / 60);
+  var ss = sec % 60;
+  var el = document.getElementById("quizQTimer");
+  el.classList.remove("hidden");
+  el.innerHTML = '<span class="qt-label">⏱ 남은 시간</span>' +
+                 '<span class="qt-time">' + mm + ":" + (ss < 10 ? "0" + ss : ss) + '</span>';
+  /* 10초 이하로 남으면 빨간색 + 두근두근 강조 */
+  if (sec <= 10) el.classList.add("warn"); else el.classList.remove("warn");
+}
+function hideQuestionTimer() {
+  var el = document.getElementById("quizQTimer");
+  el.classList.add("hidden");
+  el.classList.remove("warn");
+  el.textContent = "";
+}
+function onQuestionTimeout() {
+  if (quiz.awaitingNext) return;
+  var correctAns = quiz.currentProblem.answer;
+  /* 객관식이면 정답 보기를 표시하고 클릭을 막는다 */
+  var buttons = document.querySelectorAll(".quiz-choice");
+  if (buttons.length > 0) {
+    var displayAns = Array.isArray(correctAns) ? correctAns[0] : correctAns;
+    buttons.forEach(function (b) {
+      b.onclick = null;
+      if (b.textContent === displayAns) b.classList.add("correct");
+    });
+  }
+  handleAnswerResult(false, correctAns, true);
 }
 
 function getChosungHint(word) {
@@ -589,7 +726,22 @@ function nextProblem() {
     speakBtn.classList.remove("hidden");
     var choices = buildChoices(epick.meaning, ENGLISH_WORDS);
     renderChoiceInput(inputArea, choices);
+  } else if (quiz.subject === "esentence") {
+    var esbank = ENGLISH_SENTENCES[quiz.level];
+    var espick = pickUnusedWord(esbank, "sentence");
+    quiz.currentProblem = { answer: espick.answer };
+    qEl.classList.add("small");
+    qEl.textContent = espick.sentence;
+    if (espick.type === "meaning") {
+      hintEl.textContent = "이 문장의 뜻을 골라 보세요";
+      quiz.currentSpeakText = espick.sentence;   /* 문장 읽어 주기 */
+      speakBtn.classList.remove("hidden");
+    } else {
+      hintEl.textContent = "빈칸에 알맞은 단어를 골라 보세요";
+    }
+    renderChoiceInput(inputArea, shuffleArray(espick.choices));
   }
+  startQuestionTimer();
 }
 function speakCurrentWord() {
   if (!quiz.currentSpeakText) return;
@@ -661,29 +813,39 @@ function submitChoiceAnswer(chosen, btnEl) {
   });
   handleAnswerResult(isCorrect, correctAns);
 }
-function handleAnswerResult(isCorrect, correctAns) {
+function handleAnswerResult(isCorrect, correctAns, timedOut) {
   quiz.awaitingNext = true;
+  stopQuestionTimer();
+  hideQuestionTimer();
   quiz.total += 1;
   if (isCorrect) quiz.correct += 1;
   var fb = document.getElementById("quizFeedback");
   var displayAns = Array.isArray(correctAns) ? correctAns[0] : correctAns;
   if (isCorrect) {
-    fb.textContent = "정답이에요! 🎉";
+    fb.textContent = "정답이에요! 🎉 (정답: " + displayAns + ")";
     fb.className = "quiz-feedback ok";
   } else {
-    fb.textContent = "아쉬워요! 정답은 " + displayAns + josa(displayAns, "이에요", "예요");
+    var head = timedOut ? "시간 초과예요! 정답은 " : "아쉬워요! 정답은 ";
+    /* 문장형 정답(마침표·물음표 등으로 끝남)에는 "이에요/예요"를 붙이지 않고 따옴표로 보여 준다 */
+    if (/[.?!]$/.test(String(displayAns))) {
+      fb.textContent = head + "“" + displayAns + "”";
+    } else {
+      fb.textContent = head + displayAns + josa(displayAns, "이에요", "예요");
+    }
     fb.className = "quiz-feedback no";
   }
   if (quiz.mode === "count") updateProgressBarCount();
   setTimeout(function () {
     if (quiz.mode === "time" && Date.now() >= quiz.endAt) { finishQuiz(); return; }
     nextProblem();
-  }, 1000);
+  }, REVEAL_MS);
 }
 
 /* ---------- 결과 처리 ---------- */
 function finishQuiz() {
   if (quiz.timerHandle) clearInterval(quiz.timerHandle);
+  stopQuestionTimer();
+  hideQuestionTimer();
   var elapsedSec = Math.round((Date.now() - quiz.startTime) / 1000);
   var accuracy = quiz.total > 0 ? Math.round((quiz.correct / quiz.total) * 100) : 0;
 
@@ -705,7 +867,7 @@ function finishQuiz() {
 
   document.getElementById("resultScore").textContent = quiz.correct + " / " + quiz.total;
   document.getElementById("resultDetail").textContent =
-    SUBJECT_LABEL[quiz.subject] + " · " + quiz.level + "단계 · 정답률 " + accuracy + "% · " +
+    SUBJECT_LABEL[quiz.subject] + " · " + levelDisplay(quiz.subject, quiz.level) + " · 정답률 " + accuracy + "% · " +
     Math.floor(elapsedSec / 60) + "분 " + (elapsedSec % 60) + "초";
   document.getElementById("resultEmoji").textContent = accuracy >= 90 ? "🏆" : accuracy >= 70 ? "🎉" : "💪";
 
@@ -766,7 +928,7 @@ function goToRecords() {
         titleStr = SUBJECT_LABEL[r.subject] + " · " + r.level;
         valueStr = "낱말 " + r.correct + "개";
       } else {
-        titleStr = SUBJECT_LABEL[r.subject] + " · " + r.level + "단계";
+        titleStr = SUBJECT_LABEL[r.subject] + " · " + levelDisplay(r.subject, r.level);
         valueStr = r.correct + " / " + r.total;
       }
       item.innerHTML =
@@ -1307,5 +1469,12 @@ window.onload = function () {
     selectProfile(last.id);
   } else {
     goToProfileSelect();
+  }
+  /* 실행 시 새 버전 확인, 그리고 앱으로 되돌아올 때마다 다시 확인 */
+  checkForUpdate();
+  if (document.addEventListener) {
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) checkForUpdate();
+    });
   }
 };
